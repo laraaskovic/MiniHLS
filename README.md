@@ -1,45 +1,44 @@
-# MiniHLS: A High-Level Synthesis Compiler
+# MiniHLS: A High-Level Synthesis Compiler on MLIR and CIRCT
 
 A compiler that takes functions written in a small C-like language and generates synthesizable, verified SystemVerilog. This is the same job commercial high-level synthesis tools do: turn a sequential software description into a datapath, a controller, and a schedule that meets a target clock period.
 
-The core algorithms are written from scratch. LLVM, MLIR, and CIRCT are deliberately not used, since implementing scheduling, binding, and pipelining is the point of the project.
+The compiler is built the way industry compilers are: on **MLIR** for its intermediate representation and optimizations, and on **CIRCT** (MLIR for hardware) for scheduling solvers and Verilog output. The parts that make it an HLS compiler are written here: the language front end, the translation into MLIR, the scheduling pass, and the generation of the controller and datapath.
 
-> New to the toolchain? [docs/GUIDE.md](docs/GUIDE.md) explains what the problem
-> is, what Verilator, Yosys, Questa, and Quartus each do and why, how the verification
-> strategy works, and what currently exists in the repository. This file is the
-> specification; that one is the orientation.
+> **Start with [docs/PLAN.md](docs/PLAN.md).** It is the project plan and
+> learning guide: what already exists in the world, what the frameworks
+> provide, what this project adds and why, how novel it is, and the
+> step-by-step build order.
 >
-> For background on *why* the stack looks like this — how compiling to hardware
-> compares to compiling to x86 or a bytecode VM, plus the operating-system
-> concepts underneath (processes, virtual memory, linking, why there's no stack
-> in a circuit) — see
-> [docs/COMPILERS_AND_SYSTEMS.md](docs/COMPILERS_AND_SYSTEMS.md).
+> [docs/GUIDE.md](docs/GUIDE.md) explains the hardware toolchain (Verilator,
+> Yosys, Questa, Quartus) and the verification strategy.
+> [docs/COMPILERS_AND_SYSTEMS.md](docs/COMPILERS_AND_SYSTEMS.md) compares
+> compiling to hardware with compiling to a CPU.
 
 ## Motivation
 
-FPGA toolchains are compilers. Synthesis lowers RTL to gates, HLS lowers C to RTL, and hardware generators like Chisel and Hardcaml raise the abstraction further. Engineers who understand both compilers and hardware are rare, and they are exactly who FPGA tool teams, hardware compiler groups, and trading firms building internal RTL generators look for.
+FPGA toolchains are compilers. Synthesis lowers RTL to gates, HLS lowers C to RTL, and hardware generators like Chisel and Hardcaml raise the abstraction further. Engineers who understand both compilers and hardware are rare, and they are exactly who FPGA tool teams, hardware compiler groups, ML compiler teams, and trading firms building internal RTL generators look for. Those teams work inside LLVM and MLIR, so this project does too.
 
-This project also produces a measurable result: generated hardware can be compared directly against hand-written RTL for the same function on latency, area, and maximum frequency.
+It also produces a measurable result: generated hardware can be compared directly against hand-written RTL for the same function on latency, area, and maximum frequency.
 
 ## Architecture
 
 ```
 .hc source
-  -> Lexer + parser         -> AST
-  -> Semantic analysis      -> typed AST (bit widths, signedness, constant loop bounds)
-  -> AST interpreter        (reference model 1)
-  -> Lowering               -> CFG IR -> SSA IR
-  -> IR interpreter         (reference model 2, run after every pass)
-  -> Optimization           constant propagation, DCE, CSE, strength reduction,
-                            bit-width range analysis, if-conversion, loop unrolling
-  -> HLS middle end         delay characterization, scheduling, binding,
-                            register insertion, pipelining and II analysis
-  -> RTL generation         FSM + datapath, or pipelined datapath, in SystemVerilog
-  -> Co-simulation          Verilator, compared against both interpreters
-  -> Reports                Yosys for area, Quartus for ALMs/DSPs and Fmax
+  -> Lexer + parser          -> AST                                  ours (done)
+  -> Semantic analysis       -> typed AST: widths, loop bounds       ours
+  -> AST interpreter         (the golden reference model)            ours
+  -> MLIRGen                 -> MLIR: func / arith / scf / memref    ours
+  -> Optimization            canonicalize, CSE, SCCP, unrolling      MLIR
+                             + bit-width narrowing pattern           ours
+  -> Execution check         lower to LLVM, run, compare             MLIR
+  -> Scheduling              ChainingProblem / ModuloProblem         ours, on CIRCT solvers
+  -> Hardware generation     FSM + datapath -> hw / comb / seq       ours
+  -> Verilog                 ExportVerilog                           CIRCT
+  -> Co-simulation           generated Verilator testbench           ours + Verilator
+  -> Reports                 Yosys for area, Quartus for ALMs/Fmax
 ```
 
-Two interpreters are built before any hardware is generated. They serve as trusted references: when generated RTL disagrees with them, the bug is in the hardware path, which narrows debugging enormously.
+The AST interpreter is built before any hardware is generated and every later stage is checked against it: the MLIR is executed through LLVM and compared, and the generated RTL is simulated and compared. When they disagree, the bug is in the stage between, which narrows debugging enormously.
 
 ## Input language
 
@@ -61,28 +60,30 @@ Width rules are part of the design: arithmetic grows to avoid overflow (addition
 
 ## Tech stack
 
-C++20 with CMake and GoogleTest. The lexer and parser are hand-written, with no parser generator. Verilator 5 handles co-simulation, Yosys gives fast area estimates, Questa provides 4-state X-propagation checks, and Quartus provides real ALM/DSP counts and timing closure. Python drives the scripts. The default clock target is 6.4 ns (156.25 MHz, the 10GbE datapath clock) and is configurable.
+C++20 with CMake and GoogleTest. The lexer and parser are hand-written, with no parser generator. MLIR and CIRCT provide the IR, the optimization passes, the scheduling solvers, and Verilog export. Verilator 5 handles co-simulation, Yosys gives fast area estimates, Questa provides 4-state X-propagation checks, and Quartus provides real ALM/DSP counts and timing closure. The default clock target is 6.4 ns (156.25 MHz, the 10GbE datapath clock) and is configurable.
 
 ```
 minihls/
   src/
-    frontend/     lexer, parser, AST, diagnostics
+    frontend/     lexer, parser, AST, diagnostics                (done)
     sema/         type checking, width rules, scopes
-    interp/       AST interpreter, IR interpreter
-    ir/           CFG, SSA, dominators, verifier, printer
-    passes/       dataflow framework and optimization passes
-    hls/          delay library, scheduling, binding, registers, pipelining, FSM
-    rtl/          SystemVerilog emitter
+    interp/       AST interpreter (golden reference)
+    mlirgen/      AST -> MLIR
+    dialect/      the minihls stream dialect (ODS)
+    transforms/   narrowing pattern, pass pipeline
+    hls/          delay model, scheduling, hardware generation
     driver/       CLI
-  examples/       .hc programs with expected outputs
-  tests/          unit, cosim (Verilator), fuzz
-  characterize/   operator delay and area measurement scripts
-  bench/          results and write-ups
+  examples/       .hc programs
+  tests/          unit, MLIR (FileCheck), cosim (Verilator), fuzz
+  docs/           plan, guides
 ```
 
-Every IR stage has a printer and a verifier, so malformed IR fails immediately after the pass that produced it.
+Planned CLI:
 
-CLI: `minihls compile dot.hc --top dot --clock-ns 6.4 --emit-ir --emit-sv dot.sv --report schedule`
+```
+minihls emit-mlir examples/dot.hc --top dot            # software-level MLIR
+minihls compile   examples/dot.hc --top dot --clock-ns 6.4 --emit-sv dot.sv --report schedule
+```
 
 ## Building and testing
 
@@ -130,6 +131,7 @@ Linux filesystem.
 | g++ 13+     | compiling the compiler          | C++20                                        |
 | CMake 3.24+ | build system                    | `FIND_PACKAGE_ARGS` needs 3.24               |
 | GoogleTest  | unit and co-simulation suites   | fetched automatically if not installed       |
+| MLIR, CIRCT | IR, passes, scheduling, Verilog | prebuilt CIRCT release or source build; see docs/PLAN.md step 0 |
 | Verilator 5 | co-simulation                   | optional: configure `-DMINIHLS_COSIM=OFF`    |
 | Yosys       | area reports                    | optional: `yowasp-yosys` also works, no root |
 | Questa      | 4-state X-propagation checks    | optional, lab machines only                  |
@@ -165,20 +167,26 @@ case with `minihls_unit_tests --gtest_filter='RoundTrip.*'`.
 
 ## Milestones
 
-Milestones 0 through 5 are the minimum complete version: a compiler that produces verified multi-cycle hardware. Milestone 7 and Milestone 9 are what make the project distinctive.
+The reasoning behind each step is in [docs/PLAN.md](docs/PLAN.md#8-step-by-step-build-plan); task checklists, effort estimates, and the results to record are in [docs/MILESTONES.md](docs/MILESTONES.md). Milestones 0 and 1 were built before the move to MLIR and carry over unchanged.
 
-| # | Milestone | Status |
-| - | --------- | ------ |
-| 0 | Setup | **done** — 2 suites, area report working |
-| 1 | Lexer, parser, and AST | **done** — 6 examples, 60 tests, `minihls parse` |
-| 2 | Semantic analysis and AST interpreter | next |
-| 3 | IR and SSA | |
-| 4 | Optimization for hardware | |
-| 5 | First hardware: scheduling, registers, FSM | |
-| 6 | Scheduling and binding for area | |
-| 7 | Pipelining and streams | |
-| 8 | Verification hardening | |
-| 9 | Capstone: ITCH parsing in HLS | |
+| # | Step | Status |
+| - | ---- | ------ |
+| 0 | Setup: build system, co-simulation harness, area reports | **done** |
+| 1 | Lexer, parser, and AST | **done** |
+| P0 | Toolchain: MLIR and CIRCT in WSL, hand-written module to Verilator | next |
+| P1 | Read and run MLIR by hand | |
+| P2 | Semantic analysis and the golden interpreter | |
+| P3 | MLIRGen: AST to func/arith/scf/memref, checked by execution | |
+| P4 | Optimization pipeline and the bit-width narrowing pattern | |
+| P5 | The stream dialect | |
+| P6 | Scheduling on CIRCT's solvers | |
+| P7 | First hardware: FSM, datapath, interfaces, co-simulation | |
+| P8 | Pipelining and streams | |
+| P9 | Resource sharing and latency-versus-area curves | |
+| P10 | Verification hardening: random programs, differential testing | |
+| P11 | Capstone: ITCH parsing compared with hand-written RTL | |
+
+A half-finished from-scratch middle end (hand-written SSA IR and passes) is kept on the `from-scratch` branch for reference.
 
 ### 0. Setup &mdash; done
 CMake project with GoogleTest, a hand-written SystemVerilog adder simulated in Verilator from a C++ test, and a Yosys script reporting cell counts.
@@ -209,41 +217,6 @@ broken.hc:2:14: error: expected ';' after a declaration, but found 'return'
                  ^
 ```
 
-### 2. Semantic analysis and AST interpreter
-Symbol tables and scopes, type checking with the documented width rules, verification that loop bounds are compile-time constants, and an interpreter with exact bit-width semantics.
-**Done when:** every example produces its expected output and invalid programs are rejected with useful messages.
-
-### 3. IR and SSA
-Lowering to a CFG IR with bit-width-typed values, dominator tree construction, SSA construction, an IR verifier and printer, and an IR interpreter. A phi node corresponds to a multiplexer in hardware.
-**Done when:** the IR interpreter matches the AST interpreter on every example.
-
-### 4. Optimization for hardware
-A worklist dataflow framework, constant propagation, dead-code elimination that respects memory and stream side effects, common-subexpression elimination, strength reduction of constant multiplications into shifts and adds, bit-width range analysis that narrows values, if-conversion of small branches into selects, and unrolling of pragma-marked loops.
-**Done when:** the IR interpreter still matches after every pass, with operator counts and total bit-widths reported before and after.
-
-### 5. First hardware: scheduling, registers, FSM
-An operator delay and area library measured by synthesizing individual operators at several widths; ASAP scheduling with operation chaining under the clock period; register insertion for values live across cycle boundaries; an FSM controller with start/done/idle; memory interfaces with one-cycle read latency; the SystemVerilog emitter; and co-simulation against the IR interpreter.
-**Done when:** every example's RTL passes co-simulation on random inputs, synthesizes in Yosys, and meets the clock target, with latency and resources reported per example.
-
-### 6. Scheduling and binding for area
-ALAP scheduling and mobility, SDC-based scheduling where timing and resource constraints become difference constraints solved with Bellman-Ford, operator binding with resource sharing, and register binding via the left-edge algorithm.
-**Done when:** a latency-versus-area trade-off curve exists for at least two examples (such as a FIR filter with one versus four multipliers) and every point passes co-simulation.
-
-### 7. Pipelining and streams
-Loop-carried dependency analysis, II computation from dependency latency and distance plus memory port limits, a pipelined datapath with per-stage valid bits and global stall, `stream<T>` ports as ready/valid, and a report of requested versus achieved II with the limiting reason.
-**Done when:** `dot.hc` and a stream example reach their best achievable II, pass co-simulation under random backpressure, and have II, latency, resources, and Fmax reported.
-
-### 8. Verification hardening
-A random program generator for the language, differential testing across the AST interpreter, the IR interpreter after every pass, and Verilator RTL, plus automatic test-case reduction by delta debugging and runs under AddressSanitizer and UndefinedBehaviorSanitizer.
-**Done when:** the fuzzer has run many iterations and every bug found is fixed and logged with its reduced reproducer.
-
-### 9. Capstone: ITCH parsing in HLS
-An ITCH Add Order field extractor written in the language over a `stream<u8>`, compiled with MiniHLS and compared against the equivalent hand-written RTL feed handler on latency in cycles, ALMs, registers, DSP blocks, and Fmax. Optionally add an Intel HLS Compiler version as a third data point.
-**Done when:** a written comparison exists with measured numbers and an explanation of each difference.
-
-### Stretch goals
-An LP objective for SDC scheduling using HiGHS; formal equivalence checking of small generated modules with SymbiYosys; dataflow pipelines of multiple functions connected by streams; a written comparison of this IR design against CIRCT's dialects.
-
 ## Deliverables
 
 - The number of example and fuzzed programs passing co-simulation
@@ -253,6 +226,9 @@ An LP objective for SDC scheduling using HiGHS; formal equivalence checking of s
 
 ## References
 
+Lattner et al., "MLIR: Scaling Compiler Infrastructure for Domain Specific Computation," CGO 2021.
+The MLIR Toy tutorial, mlir.llvm.org.
+The CIRCT documentation, circt.llvm.org.
 Kastner, Matai, and Neuendorffer, *Parallel Programming for FPGAs* (free online).
 Cong and Zhang, "An Efficient and Versatile Scheduling Algorithm Based on SDC Formulation," DAC 2006.
 Canis et al., "LegUp: High-Level Synthesis for FPGA-Based Processor/Accelerator Systems," FPGA 2011.
