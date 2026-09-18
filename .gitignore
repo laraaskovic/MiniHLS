@@ -20,5 +20,7 @@ obj_dir/
 .DS_Store
 *.swp
 
-# Machine-local agent settings; .claude/settings.json is shared deliberately.
-.claude/settings.local.json
+# Agent settings. Kept out of the repository because the tooling appends
+# machine-specific allowlist entries (absolute paths, /tmp files) that mean
+# nothing to another checkout.
+.claude/

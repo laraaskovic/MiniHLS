@@ -109,6 +109,16 @@ BUILD_TYPE=Debug bash scripts/build_and_test.sh
 BUILD_DIR=./build bash scripts/build_and_test.sh   # keep the build tree in the repo
 ```
 
+To build under AddressSanitizer and UndefinedBehaviorSanitizer — worth doing
+after any change to the tree-walking code, which is where use-after-move and
+out-of-bounds bugs hide:
+
+```bash
+cmake -S . -B build-asan -DMINIHLS_SANITIZE=ON -DMINIHLS_COSIM=OFF -DCMAKE_BUILD_TYPE=Debug
+cmake --build build-asan -j
+ctest --test-dir build-asan --output-on-failure
+```
+
 The build tree defaults to `~/.cache/minihls/build` rather than `./build`,
 because compiling on the `/mnt/c` 9p mount is substantially slower than on the
 Linux filesystem.
@@ -142,13 +152,16 @@ pip install yowasp-yosys
 
 CTest exposes two suites, matching the two halves of the verification strategy:
 
-- `unit` — the C++ side, including the fixed-width integer semantics in
-  [bits.hpp](src/support/bits.hpp) that every later stage depends on.
-- `cosim` — Verilated hardware driven against an independent software model.
-  The width-8 adder is checked exhaustively over all 65536 input pairs; the
-  width-16 adder is checked on a fixed-seed random sweep plus range corners.
+- `unit` (57 tests) — the C++ side: the fixed-width integer semantics in
+  [bits.hpp](src/support/bits.hpp) that every later stage depends on, the lexer,
+  the parser's precedence and associativity, diagnostics, and print-then-reparse
+  stability over every file in [examples/](examples/).
+- `cosim` (3 tests) — Verilated hardware driven against an independent software
+  model. The width-8 adder is checked exhaustively over all 65536 input pairs;
+  the width-16 adder on a fixed-seed random sweep plus range corners.
 
-Run one suite on its own with `ctest --test-dir <build> -R cosim`.
+Run one suite on its own with `ctest --test-dir <build> -R cosim`, or a single
+case with `minihls_unit_tests --gtest_filter='RoundTrip.*'`.
 
 ## Milestones
 
@@ -156,9 +169,9 @@ Milestones 0 through 5 are the minimum complete version: a compiler that produce
 
 | # | Milestone | Status |
 | - | --------- | ------ |
-| 0 | Setup | **done** — 2 suites, 15 tests, area report working |
-| 1 | Lexer, parser, and AST | next |
-| 2 | Semantic analysis and AST interpreter | |
+| 0 | Setup | **done** — 2 suites, area report working |
+| 1 | Lexer, parser, and AST | **done** — 6 examples, 60 tests, `minihls parse` |
+| 2 | Semantic analysis and AST interpreter | next |
 | 3 | IR and SSA | |
 | 4 | Optimization for hardware | |
 | 5 | First hardware: scheduling, registers, FSM | |
@@ -178,9 +191,23 @@ pairs), and [scripts/area_report.sh](scripts/area_report.sh) reporting 21/50/111
 cells at widths 4/8/16. The harness was mutation-tested: removing the adder's
 sign extension makes the co-simulation suite fail, as it must.
 
-### 1. Lexer, parser, and AST
+### 1. Lexer, parser, and AST &mdash; done
 Hand-written lexer, recursive-descent parser with Pratt-style expression parsing for precedence and associativity, AST types and printer, diagnostics with source locations, and `LANGUAGE.md`.
 **Done when:** every example parses, print-then-reparse is stable, and malformed programs produce clear errors.
+
+Built: [LANGUAGE.md](LANGUAGE.md) with the full grammar and width rules;
+[src/frontend/](src/frontend/) (lexer, Pratt parser, AST, printer, diagnostics);
+six programs in [examples/](examples/); and a `minihls parse` driver.
+Print-then-reparse stability is checked as a property over every example rather
+than against golden files, so new examples are covered automatically.
+
+```
+$ minihls parse examples/dot.hc --print-ast
+$ minihls parse broken.hc
+broken.hc:2:14: error: expected ';' after a declaration, but found 'return'
+      i32 acc = 0
+                 ^
+```
 
 ### 2. Semantic analysis and AST interpreter
 Symbol tables and scopes, type checking with the documented width rules, verification that loop bounds are compile-time constants, and an interpreter with exact bit-width semantics.

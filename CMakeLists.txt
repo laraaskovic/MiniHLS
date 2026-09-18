@@ -24,6 +24,21 @@ endif()
 
 option(MINIHLS_COSIM "Build the Verilator co-simulation test suite" ON)
 option(MINIHLS_WERROR "Treat compiler warnings as errors" OFF)
+option(MINIHLS_SANITIZE "Build with AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
+
+# Sanitizers have to reach the whole program, including dependencies, so they go
+# on as directory-wide options rather than through the warnings interface target.
+# Milestone 8 makes these part of routine verification; they are available now
+# because a tree-walking compiler is exactly the kind of code that hides
+# use-after-move and out-of-bounds bugs.
+if(MINIHLS_SANITIZE)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=address,undefined)
+  else()
+    message(WARNING "MINIHLS_SANITIZE is only supported for GCC and Clang")
+  endif()
+endif()
 
 # Warning flags live on an interface target so that only our own code is held to
 # them; vendored dependencies and Verilator-generated sources are not.
