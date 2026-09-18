@@ -1,2 +1,18 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Normalize to LF in the repository and on checkout.
+#
+# Every tool that consumes these files -- g++, CMake, Verilator, Yosys, bash --
+# runs on the Linux side, so a CRLF checkout buys nothing and a stray carriage
+# return in a shebang or a heredoc is a real failure. Editors on Windows handle
+# LF fine.
+* text=auto eol=lf
+
+# The PowerShell entry point is the one file Windows itself runs.
+*.ps1 text eol=crlf
+
+# Binary formats that must never be touched.
+*.png binary
+*.jpg binary
+*.pdf binary
+*.qar binary
+*.sof binary
+*.rbf binary

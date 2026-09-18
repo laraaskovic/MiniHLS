@@ -1,0 +1,24 @@
+# Build trees
+build/
+build-*/
+out/
+cmake-build-*/
+
+# Verilator output
+obj_dir/
+*.vcd
+*.fst
+
+# Yosys / synthesis output
+*.blif
+*.json.synth
+*.log
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# Machine-local agent settings; .claude/settings.json is shared deliberately.
+.claude/settings.local.json
