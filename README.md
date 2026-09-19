@@ -9,6 +9,10 @@ The compiler is built the way industry compilers are: on **MLIR** for its interm
 > provide, what this project adds and why, how novel it is, and the
 > step-by-step build order.
 >
+> [docs/ROADMAP.md](docs/ROADMAP.md) turns that build order into epics and
+> stories: one story is one pull request, and each carries the concept it
+> teaches and the interview question it answers.
+>
 > [docs/GUIDE.md](docs/GUIDE.md) explains the hardware toolchain (Verilator,
 > Yosys, Questa, Quartus) and the verification strategy.
 > [docs/COMPILERS_AND_SYSTEMS.md](docs/COMPILERS_AND_SYSTEMS.md) compares
