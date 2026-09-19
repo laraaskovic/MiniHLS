@@ -63,40 +63,44 @@ Labels — create these once, use them forever:
 
 ---
 
-## Before you start: what already exists
+## The reset
 
-You have chosen to rebuild from scratch. That is a legitimate way to learn —
-rebuilding something you only half-understand is how it sticks. But rebuild
-with your eyes open, so two facts first.
+This repository was deliberately emptied. Everything before this point was
+written by an AI assistant, and code you did not write is worth very little
+in the conversation this project exists to prepare you for — you cannot
+defend a design decision you never made.
 
-**Fact one: the front half of the compiler works today.** `main` has a lexer,
-a Pratt parser, an AST and printer, diagnostics, semantic analysis and the
-golden interpreter, under **118 passing unit tests**. Epics E2 and E3 below
-describe rebuilding exactly that.
+**Nothing is lost.** Every deleted file is still in git history. To read the
+old implementation of anything:
 
-**Fact two: none of that is what is stuck.** MLIRGen and the optimisation
-pass are written — roughly 1,200 lines — and have *never been compiled*,
-because the toolchain was never installed. From MILESTONES.md:
+```bash
+git log --oneline --all              # find the commit before the reset
+git show <commit>:src/sema/sema.cpp  # read any file at that commit
+git diff <commit> -- src/frontend/   # diff your rebuild against it
+```
 
-> P0 — MLIR/CIRCT toolchain: **blocked on a source build.** This machine's
-> WSL is `aarch64`, so no CIRCT prebuilt applies.
+Each epic below carries an **In git history** line saying what used to exist.
+Use it two ways: as a hint when you are stuck, and — more valuably — as a
+comparison once your own version passes its tests. *Why did it do that
+differently? Which one is right?* is one of the better learning exercises
+available here.
 
-Rewriting the frontend does not unblock the toolchain. **E1 is first, and it
-is first whether you rewrite anything else or not.** Until CIRCT builds,
-every epic from E4 onward is a hypothesis.
+Resist reading it first. A solution you read is a solution you cannot
+explain.
 
-So each epic below carries an **On `main` today** line. When you reach an
-epic, look at what is there and pick one:
+### What the reset does not fix
 
-- **Rewrite** — close the file, build it again from the spec. Best learning,
-  slowest.
-- **Port** — read it, understand it line by line, bring it across with tests.
-  A review PR with `type:learning` is a fine story.
-- **Keep** — it works and you can explain it. Move on.
+The toolchain. MLIR and CIRCT still have to be installed, and CIRCT publishes
+no `linux-arm64` release, so on ARM WSL there is no prebuilt to download.
+That is why **E1 comes first** — it is first whether anything else is
+rewritten or not, and every epic from E4 onward is a hypothesis until it
+lands.
 
-Nothing is ever lost by choosing wrong: the existing code stays in git history
-on `main` forever, and you can always diff your rebuild against it — which is
-itself one of the better learning exercises available here.
+It is not, however, a wall. Build from source on aarch64 (slow but fine),
+let a free `ubuntu-24.04-arm` GitHub Actions runner build it for you, or
+develop on an x86_64 box where the prebuilt applies. And note that **E2 and
+E3 need no MLIR at all** — start a build in the background and go write a
+parser.
 
 ---
 
@@ -143,7 +147,7 @@ RTL simulation and synthesis toolchain.
 **Interview questions this prepares.** *What is MLIR, and how does it differ
 from LLVM IR? Why would a hardware compiler use it?*
 
-**On `main` today.** `build.ps1`, `scripts/build_circt.sh`, `hw/`,
+**In git history.** `build.ps1`, `scripts/build_circt.sh`, `hw/`,
 `tests/cosim/`, a Yosys area script. The build system works; the CIRCT build
 does not yet.
 
@@ -168,7 +172,7 @@ diagnostics with source locations.
 **Interview questions.** *Walk me through your frontend. How do you parse
 expressions with precedence? What makes a good compiler error message?*
 
-**On `main` today.** All of it, tested: `src/frontend/` (14 files),
+**In git history.** All of it, and it worked: `src/frontend/` (14 files),
 `LANGUAGE.md` (433 lines), six examples, unit tests.
 
 | | Story | Size |
@@ -192,8 +196,8 @@ golden-model testing.
 **Interview questions.** *How does type checking work? How do you know your
 compiler is correct?*
 
-**On `main` today.** All of it: `src/sema/`, `src/interp/`, `minihls check`,
-`minihls run`, 118 unit tests.
+**In git history.** All of it: `src/sema/`, `src/interp/`, `minihls check`,
+`minihls run`, 118 passing unit tests.
 
 | | Story | Size |
 |-|-------|------|
@@ -216,7 +220,7 @@ language promises and what the target IR guarantees.
 **Interview questions.** *How does a frontend generate SSA? What did you have
 to be careful about when lowering your language to someone else's IR?*
 
-**On `main` today.** `src/mlirgen/` — 745 lines plus an LLVM-JIT execution
+**In git history.** `src/mlirgen/` — 745 lines plus an LLVM-JIT execution
 check and 214 lines of differential tests. **Never compiled.** Treat it as a
 hypothesis, not as working code.
 
@@ -244,7 +248,7 @@ IR testing.
 **Interview questions.** *Walk me through a pass you wrote. What is
 canonicalisation and why does it come before everything else?*
 
-**On `main` today.** `src/transforms/` — unrolling, the narrowing pattern,
+**In git history.** `src/transforms/` — unrolling, the narrowing pattern,
 metrics. Same caveat as E4: written, never compiled.
 
 | | Story | Size |
@@ -266,7 +270,7 @@ emits them for `stream<T>` parameters.
 **Interview questions.** *When would you define a new dialect instead of
 reusing an existing one?*
 
-**On `main` today.** Nothing.
+**In git history.** Nothing — this was never started.
 
 | | Story | Size |
 |-|-------|------|
@@ -290,7 +294,7 @@ difference between latency and combinational delay; resource constraints.
 scheduling versus SDC? What is the difference between an operator's latency
 and its delay, and why does an HLS tool need both?*
 
-**On `main` today.** Nothing. CIRCT provides the problem models and the
+**In git history.** Nothing — this was never started. CIRCT provides the problem models and the
 solvers; you build the problem and use the answer.
 
 | | Story | Size |
@@ -313,7 +317,7 @@ co-simulation. **This is the milestone that makes the project real.**
 **Interview questions.** *What does the RTL your compiler generates look
 like, and why? How does it compare to what you would have written by hand?*
 
-**On `main` today.** Nothing, but `tests/cosim/` and `hw/` have the Verilator
+**In git history.** Nothing, but `tests/cosim/` and `hw/` have the Verilator
 pattern to build on.
 
 | | Story | Size |
