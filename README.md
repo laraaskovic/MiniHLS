@@ -154,10 +154,12 @@ pip install yowasp-yosys
 
 CTest exposes two suites, matching the two halves of the verification strategy:
 
-- `unit` (57 tests) — the C++ side: the fixed-width integer semantics in
+- `unit` (118 tests) — the C++ side: the fixed-width integer semantics in
   [bits.hpp](src/support/bits.hpp) that every later stage depends on, the lexer,
-  the parser's precedence and associativity, diagnostics, and print-then-reparse
-  stability over every file in [examples/](examples/).
+  the parser's precedence and associativity, diagnostics, print-then-reparse
+  stability over every file in [examples/](examples/), every row of the width
+  table, every semantic error, loop trip counts, and the reference
+  interpreter's results on every example.
 - `cosim` (3 tests) — Verilated hardware driven against an independent software
   model. The width-8 adder is checked exhaustively over all 65536 input pairs;
   the width-16 adder on a fixed-seed random sweep plus range corners.
@@ -173,9 +175,9 @@ The reasoning behind each step is in [docs/PLAN.md](docs/PLAN.md#8-step-by-step-
 | - | ---- | ------ |
 | 0 | Setup: build system, co-simulation harness, area reports | **done** |
 | 1 | Lexer, parser, and AST | **done** |
-| P0 | Toolchain: MLIR and CIRCT in WSL, hand-written module to Verilator | next |
+| P0 | Toolchain: MLIR and CIRCT in WSL, hand-written module to Verilator | in progress |
 | P1 | Read and run MLIR by hand | |
-| P2 | Semantic analysis and the golden interpreter | |
+| P2 | Semantic analysis and the golden interpreter | **done** |
 | P3 | MLIRGen: AST to func/arith/scf/memref, checked by execution | |
 | P4 | Optimization pipeline and the bit-width narrowing pattern | |
 | P5 | The stream dialect | |
@@ -210,6 +212,9 @@ Print-then-reparse stability is checked as a property over every example rather
 than against golden files, so new examples are covered automatically.
 
 ```
+$ minihls check examples/fir.hc --report-truncations
+$ minihls run examples/max3.hc --top max3 --arg a=3 --arg b=-9 --arg c=7
+return i16 7
 $ minihls parse examples/dot.hc --print-ast
 $ minihls parse broken.hc
 broken.hc:2:14: error: expected ';' after a declaration, but found 'return'

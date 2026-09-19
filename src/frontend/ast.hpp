@@ -115,6 +115,18 @@ struct Expr {
 
   // Call
   std::vector<ExprPtr> args;
+
+  // Filled in by semantic analysis; meaningless before it runs. Every later
+  // stage -- lowering, both interpreters -- reads types from here rather than
+  // re-deriving the width rules, so there is exactly one implementation of them.
+  unsigned width = 0;
+  bool is_signed = false;
+  // Name: the resolved symbol, an index into sema::FunctionInfo::symbols.
+  int symbol = -1;
+  // Set when the expression is built only from literals, in which case
+  // `constant` holds its bits truncated to `width`.
+  bool is_constant = false;
+  std::uint64_t constant = 0;
 };
 
 ExprPtr make_int_literal(std::uint64_t value, SourceRange range);
@@ -187,6 +199,9 @@ struct Stmt {
 
   // Pragma
   Pragma pragma;
+
+  // VarDecl: the declared symbol, filled in by semantic analysis.
+  int symbol = -1;
 };
 
 StmtPtr make_block(std::vector<StmtPtr> statements, SourceRange range);

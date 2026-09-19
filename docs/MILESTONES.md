@@ -20,11 +20,12 @@ it should take.
 | ---- | ------ |
 | Build system, GoogleTest, Verilator co-simulation harness, Yosys area script | **Done** (milestone 0) |
 | Lexer, Pratt parser, AST, printer, diagnostics, `LANGUAGE.md`, six examples, 60 tests | **Done** (milestone 1) |
-| Semantic analysis and AST interpreter | Written, untested, on the `from-scratch` branch |
+| Semantic analysis and AST interpreter | **Done** (P2): `minihls check` and `minihls run`, 58 new tests |
+| MLIR/CIRCT toolchain | In progress (P0): building from source, since this machine is ARM64 |
 | Hand-written SSA IR, IR interpreter, optimization passes | On `from-scratch`, replaced by MLIR; reference only |
 | Everything from MLIR onward | Not started |
 
-Roughly **10–15% of the total work is done**. The front end is complete and
+Roughly **15–20% of the total work is done**. The front end is complete and
 solid; the parts that make this an HLS compiler are all ahead.
 
 ---
@@ -107,13 +108,14 @@ Effort: 4–8 hours.
 **Goal:** the width rules and the reference model on `main`, reviewed and tested.
 
 Tasks:
-- [ ] Bring back from `from-scratch`: `src/sema/`, `src/interp/ast_interp.*`,
+- [x] Bring back from `from-scratch`: `src/sema/`, `src/interp/ast_interp.*`,
       `src/interp/io.*`, `src/support/int128.hpp`, and the annotation fields in
       `src/frontend/ast.hpp`.
-- [ ] Review them file by file; simplify anything you cannot explain.
-- [ ] `minihls check file.hc` and `minihls run file.hc --top f --arg a=3 ...`
+- [ ] Review them file by file (your task); ask about or simplify anything you
+      cannot explain.
+- [x] `minihls check file.hc` and `minihls run file.hc --top f --arg a=3 ...`
       in the driver.
-- [ ] Unit tests: every row of the width table in `LANGUAGE.md`; every sema
+- [x] Unit tests: every row of the width table in `LANGUAGE.md`; every sema
       error (undeclared name, shadowing, non-constant loop bound, `read()` inside
       `&&`, width over 64, return inside a loop); hand-computed expected outputs
       for all six examples.
@@ -121,6 +123,8 @@ Tasks:
 Done when: all examples produce their expected outputs and every invalid
 program is rejected with a clear message.
 Record: number of unit tests.
+**Status: done.** 118 unit tests. Runtime behaviour (division by zero, shift
+amounts, uninitialized values) is now specified in `LANGUAGE.md`.
 Effort: 8–14 hours.
 
 ### P3 — MLIRGen

@@ -13,6 +13,7 @@ absent from C is absent because it does not — see
 - [Statements](#statements)
 - [Expressions](#expressions)
 - [Width and signedness rules](#width-and-signedness-rules)
+- [Runtime behaviour](#runtime-behaviour)
 - [Pragmas](#pragmas)
 - [What is deliberately absent](#what-is-deliberately-absent)
 - [Grammar](#grammar)
@@ -154,8 +155,19 @@ assignment. The bounds must be resolvable to compile-time constants, since the
 loop has to become either unrolled logic or a counter with a fixed limit. That
 requirement is checked in semantic analysis, not by the parser.
 
+Semantic analysis finds the trip count by running the loop header at compile
+time, with the width rules applied, so wrap-around counts: in
+`for (u4 i = 7; i > 0; i = i - 2)`, `1 - 2` becomes 15 as a `u4` and the loop
+never ends, which is reported as an error. The body may not assign the
+induction variable, and `return` may not appear inside a loop; either would
+make the trip count a runtime property.
+
 Declarations are scoped to their enclosing block. Shadowing an outer name is an
-error rather than a silent override.
+error rather than a silent override. Arrays may only be declared at the top
+level of the function body, because an array is storage that exists once per
+call.
+
+A non-void function must return a value on every path.
 
 ---
 
@@ -279,6 +291,33 @@ acc = acc + x * y;
 The `i33` intermediate is real: it exists in the datapath. The truncation back to
 `i32` is what an accumulator does, and it is visible in the IR rather than
 implied.
+
+---
+
+## Runtime behaviour
+
+Every operation has a defined result; nothing is left to the implementation.
+This matters because the same program is run by an interpreter, by compiled
+MLIR, and as simulated hardware, and all three must agree bit for bit.
+
+| Situation | Result |
+| --------- | ------ |
+| A scalar declared without an initializer | Zero |
+| A local array | Its initializer (zero-filled past the end of the list) at the start of every call |
+| `a / 0` | All ones in the result type (`-1` if signed, the maximum if unsigned) |
+| `a % 0` | `a` |
+| The one overflowing quotient, `min / -1` | Wraps back to `min` |
+| Signed `/` and `%` | Truncate toward zero; the remainder takes the dividend's sign |
+| A shift amount | Read as unsigned, even from a signed operand |
+| `a << k` or `a >> k` with `k` at least the width | Zero, or all sign bits for `>>` on a signed value |
+| Operands of any operator | Evaluated left to right; in an assignment `t[i] = v`, `v` before `i` |
+| An array index outside the array | An error in the interpreter; unspecified in hardware |
+| `read()` with no data left | An error in the interpreter; the hardware waits |
+
+The division-by-zero results are the RISC-V convention: what a divider left to
+run produces, and fully defined. Constant indices are checked at compile time;
+out-of-bounds accesses with computed indices are the one case the hardware does
+not guard against.
 
 ---
 
