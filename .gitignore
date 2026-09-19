@@ -1,26 +1,23 @@
-# Build trees
+# Build output
 build/
-build-*/
-out/
-cmake-build-*/
+install/
+*.o
+*.a
+*.so
+*.obj
 
-# Verilator output
+# Verilator / simulation
 obj_dir/
 *.vcd
 *.fst
 
-# Yosys / synthesis output
-*.blif
-*.json.synth
-*.log
+# Generated RTL and reports
+out/
+*.sv.tmp
 
-# Editor / OS
+# Editors and OS
 .vscode/
 .idea/
 .DS_Store
 *.swp
-
-# Agent settings. Kept out of the repository because the tooling appends
-# machine-specific allowlist entries (absolute paths, /tmp files) that mean
-# nothing to another checkout.
-.claude/
+compile_commands.json
