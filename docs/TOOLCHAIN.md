@@ -63,22 +63,49 @@ mlir-opt --version
 circt-opt --version
 ```
 
-### If the run times out
+### If a run fails or times out
 
-GitHub kills a job at six hours. The workflow uses `ccache`, saved between
-runs, so **a timed-out run is not wasted** — re-run it and it resumes from
-where the cache left off. The first build may legitimately need two runs.
+The workflow is two jobs — `llvm` then `circt` — for two reasons. Each gets
+its own six-hour budget, and the LLVM install is cached by its commit SHA,
+so once LLVM builds successfully it is **never built again**. A failure in
+`circt` costs you the CIRCT build only.
+
+Each job also saves its `ccache` with `if: always()`, so a job that is killed
+still banks its progress and a re-run resumes rather than restarting.
+
+### What went wrong the first time
+
+The first attempt was OOM-killed after 41 minutes, 3109 steps into 5727:
+
+```
+c++: fatal error: Killed signal terminated program cc1plus
+```
+
+The cause was compile parallelism. Ninja defaults to `nproc + 2` concurrent
+jobs — six on this runner — and MLIR's TableGen-generated files
+(`ROCDLDialect.cpp`, `SPIRVOps.cpp`) can each take several GB in a single
+translation unit. Six at once does not fit in 16 GB. Capping compile jobs at
+two fixed it.
+
+Worse, the OOM killed the job's post-steps too, so the `ccache` was never
+saved and all 41 minutes were lost. That is why the cache is now saved by an
+explicit step with `if: always()` rather than by the `actions/cache` post-step.
 
 ### Points worth understanding
 
-Three flags in that workflow are the ones that matter, and they are the same
-three that make or break a local build:
+The flags that matter, and they are the same ones that make or break a local
+build in WSL:
 
 | Flag | Why |
 |---|---|
 | `git submodule update --init llvm` | CIRCT pins the exact LLVM commit it needs. A system or apt LLVM will not link. |
-| `-DBUILD_SHARED_LIBS=ON` | Static LLVM does not fit in a runner's disk, and links take forever. |
-| `-DLLVM_PARALLEL_LINK_JOBS=2` | Linking LLVM takes gigabytes *per job*. Unbounded parallel links are what gets the build OOM-killed. |
+| `-DLLVM_PARALLEL_COMPILE_JOBS=2` | **The one that matters.** A single MLIR translation unit can need several GB. Unbounded compile parallelism is what gets `cc1plus` OOM-killed. |
+| `-DLLVM_PARALLEL_LINK_JOBS=1` | Linking LLVM takes gigabytes *per job* too. |
+| `-DBUILD_SHARED_LIBS=ON` | Static LLVM does not fit in a runner's 14 GB disk, and links take far longer. |
+
+The general lesson, which applies just as much to WSL: **an LLVM build is
+limited by memory, not by cores.** Giving it more parallelism than it has RAM
+for does not make it faster, it makes it fail.
 
 ### The alternatives we did not take
 
