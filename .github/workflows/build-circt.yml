@@ -5,8 +5,17 @@
 # there is nothing to download. This workflow builds it on GitHub's free
 # arm64 runners instead of on your laptop.
 #
-# Run it from the Actions tab ("Build CIRCT (linux-arm64)" -> "Run workflow"),
-# then download the artifact when it finishes. See docs/TOOLCHAIN.md.
+# Two jobs, because the runner is small (4 cores, 16 GB RAM, ~14 GB disk)
+# and GitHub kills any single job at 6 hours:
+#
+#   llvm   builds LLVM + MLIR and caches the install directory
+#   circt  restores that install and builds CIRCT against it
+#
+# Each job gets its own 6-hour budget, and the LLVM install is cached by its
+# commit SHA, so once it succeeds it is never rebuilt.
+#
+# Run it from the Actions tab, then download the artifact. See
+# docs/TOOLCHAIN.md.
 
 name: Build CIRCT (linux-arm64)
 
@@ -18,29 +27,30 @@ on:
         required: true
         default: 'firtool-1.159.0'
 
-concurrency:
-  group: build-circt-${{ github.event.inputs.circt_ref }}
-  cancel-in-progress: false
+env:
+  # The runner has 4 cores and 16 GB. MLIR's TableGen-generated files
+  # (ROCDLDialect, SPIRVOps) can each take several GB in one translation
+  # unit, so compiling 4-6 at once gets the compiler OOM-killed. Two at a
+  # time fits. This is the setting that matters most in the whole file.
+  COMPILE_JOBS: 2
+  LINK_JOBS: 1
+  CCACHE_MAXSIZE: 3G
 
 jobs:
-  build:
+  llvm:
     runs-on: ubuntu-24.04-arm
-    # GitHub-hosted runners are killed at 6 hours. ccache (below) means a run
-    # that times out is not wasted: re-run it and it resumes from the cache.
     timeout-minutes: 350
-
+    outputs:
+      llvm_sha: ${{ steps.shas.outputs.llvm_sha }}
     steps:
       - name: Report the runner
         run: |
-          echo "arch:   $(uname -m)"
-          echo "cores:  $(nproc)"
+          echo "arch: $(uname -m)   cores: $(nproc)"
           free -h
           df -h /
 
       - name: Free up disk space
         run: |
-          # An LLVM + CIRCT build is tens of GB. The runner image ships with
-          # toolchains we do not need; removing them buys the headroom.
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
           sudo rm -rf /usr/local/share/boost /usr/share/swift || true
           df -h /
@@ -51,42 +61,54 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake ninja-build lld ccache python3 git
 
-      - name: Check out CIRCT
+      - name: Check out CIRCT and its pinned LLVM
         run: |
-          git clone https://github.com/llvm/circt.git "$HOME/circt"
-          cd "$HOME/circt"
-          git checkout "${{ github.event.inputs.circt_ref }}"
-          # CIRCT pins the exact LLVM it needs as a submodule. Use that one:
-          # a system or apt LLVM will not link against it.
-          git submodule update --init --depth 1 llvm
-          echo "CIRCT   $(git rev-parse --short HEAD)"
-          echo "LLVM    $(git -C llvm rev-parse --short HEAD)"
+          git clone --depth 1 --branch "${{ github.event.inputs.circt_ref }}" \
+            https://github.com/llvm/circt.git "$HOME/circt" \
+          || { git clone https://github.com/llvm/circt.git "$HOME/circt" \
+               && git -C "$HOME/circt" checkout "${{ github.event.inputs.circt_ref }}"; }
+          # CIRCT pins the exact LLVM commit it needs. A system LLVM will not link.
+          git -C "$HOME/circt" submodule update --init --depth 1 llvm
 
-      - name: Restore compiler cache
-        uses: actions/cache@v4
+      - name: Record commit SHAs
+        id: shas
+        run: |
+          echo "llvm_sha=$(git -C "$HOME/circt/llvm" rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          git -C "$HOME/circt" rev-parse --short HEAD
+
+      # If a previous run already installed this exact LLVM, skip the build.
+      - name: Restore the LLVM install
+        id: llvm_install
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/toolchain
+          key: llvm-install-${{ steps.shas.outputs.llvm_sha }}
+
+      - name: Restore the compiler cache
+        if: steps.llvm_install.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
         with:
           path: ~/.ccache
-          key: ccache-circt-${{ github.event.inputs.circt_ref }}-${{ github.run_id }}
+          key: ccache-llvm-${{ steps.shas.outputs.llvm_sha }}-
           restore-keys: |
-            ccache-circt-${{ github.event.inputs.circt_ref }}-
-            ccache-circt-
-
-      - name: Configure ccache
-        run: |
-          ccache --set-config=max_size=8G
-          ccache --set-config=compression=true
-          ccache --zero-stats
+            ccache-llvm-${{ steps.shas.outputs.llvm_sha }}-
+            ccache-llvm-
 
       - name: Build and install LLVM and MLIR
+        if: steps.llvm_install.outputs.cache-hit != 'true'
         run: |
-          cmake -G Ninja -S "$HOME/circt/llvm/llvm" -B "$HOME/circt/llvm/build" \
+          ccache --set-config=max_size="$CCACHE_MAXSIZE"
+          ccache --set-config=compression=true
+          ccache --zero-stats
+          cmake -G Ninja -S "$HOME/circt/llvm/llvm" -B "$HOME/llvm-build" \
             -DLLVM_ENABLE_PROJECTS=mlir \
             -DLLVM_TARGETS_TO_BUILD=host \
             -DCMAKE_BUILD_TYPE=Release \
             -DLLVM_ENABLE_ASSERTIONS=ON \
             -DBUILD_SHARED_LIBS=ON \
             -DLLVM_ENABLE_LLD=ON \
-            -DLLVM_PARALLEL_LINK_JOBS=2 \
+            -DLLVM_PARALLEL_COMPILE_JOBS=$COMPILE_JOBS \
+            -DLLVM_PARALLEL_LINK_JOBS=$LINK_JOBS \
             -DLLVM_INSTALL_UTILS=ON \
             -DLLVM_BUILD_EXAMPLES=OFF \
             -DLLVM_INCLUDE_TESTS=OFF \
@@ -94,29 +116,108 @@ jobs:
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_INSTALL_PREFIX="$HOME/toolchain"
-          ninja -C "$HOME/circt/llvm/build" install
+          ninja -C "$HOME/llvm-build" -j "$COMPILE_JOBS" install
+
+      # `if: always()` is load-bearing: the previous run was OOM-killed, the
+      # post-step never ran, and 41 minutes of compilation was thrown away.
+      # Saving explicitly means a killed or timed-out run still banks its
+      # progress, and re-running resumes instead of restarting.
+      - name: Save the compiler cache
+        if: always() && steps.llvm_install.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.ccache
+          key: ccache-llvm-${{ steps.shas.outputs.llvm_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Report cache effectiveness
+        if: always()
+        run: ccache --show-stats || true
+
+      - name: Reclaim disk, keeping only the install
+        if: steps.llvm_install.outputs.cache-hit != 'true'
+        run: |
+          rm -rf "$HOME/llvm-build"
           df -h /
+
+      - name: Save the LLVM install
+        if: steps.llvm_install.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/toolchain
+          key: llvm-install-${{ steps.shas.outputs.llvm_sha }}
+
+  circt:
+    needs: llvm
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 350
+    steps:
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
+          sudo rm -rf /usr/local/share/boost /usr/share/swift || true
+          df -h /
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build lld ccache python3 git
+
+      - name: Check out CIRCT and its pinned LLVM
+        run: |
+          git clone --depth 1 --branch "${{ github.event.inputs.circt_ref }}" \
+            https://github.com/llvm/circt.git "$HOME/circt" \
+          || { git clone https://github.com/llvm/circt.git "$HOME/circt" \
+               && git -C "$HOME/circt" checkout "${{ github.event.inputs.circt_ref }}"; }
+          git -C "$HOME/circt" submodule update --init --depth 1 llvm
+
+      - name: Restore the LLVM install
+        id: llvm_install
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/toolchain
+          key: llvm-install-${{ needs.llvm.outputs.llvm_sha }}
+          fail-on-cache-miss: true
+
+      - name: Restore the compiler cache
+        uses: actions/cache/restore@v4
+        with:
+          key: ccache-circt-${{ github.event.inputs.circt_ref }}-
+          path: ~/.ccache
+          restore-keys: |
+            ccache-circt-${{ github.event.inputs.circt_ref }}-
+            ccache-circt-
 
       - name: Build and install CIRCT
         run: |
-          cmake -G Ninja -S "$HOME/circt" -B "$HOME/circt/build" \
+          ccache --set-config=max_size="$CCACHE_MAXSIZE"
+          ccache --set-config=compression=true
+          ccache --zero-stats
+          cmake -G Ninja -S "$HOME/circt" -B "$HOME/circt-build" \
             -DMLIR_DIR="$HOME/toolchain/lib/cmake/mlir" \
             -DLLVM_DIR="$HOME/toolchain/lib/cmake/llvm" \
             -DCMAKE_BUILD_TYPE=Release \
             -DLLVM_ENABLE_ASSERTIONS=ON \
             -DBUILD_SHARED_LIBS=ON \
             -DLLVM_ENABLE_LLD=ON \
-            -DLLVM_PARALLEL_LINK_JOBS=2 \
+            -DLLVM_PARALLEL_COMPILE_JOBS=$COMPILE_JOBS \
+            -DLLVM_PARALLEL_LINK_JOBS=$LINK_JOBS \
             -DCIRCT_LLHD_SIM_ENABLED=OFF \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_INSTALL_PREFIX="$HOME/toolchain"
-          ninja -C "$HOME/circt/build" install
-          df -h /
+          ninja -C "$HOME/circt-build" -j "$COMPILE_JOBS" install
+
+      - name: Save the compiler cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.ccache
+          key: ccache-circt-${{ github.event.inputs.circt_ref }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Report cache effectiveness
         if: always()
-        run: ccache --show-stats
+        run: ccache --show-stats || true
 
       - name: Smoke-test the build
         run: |
@@ -140,6 +241,7 @@ jobs:
 
       - name: Package the toolchain
         run: |
+          rm -rf "$HOME/circt-build"
           tar czf "$HOME/circt-mlir-linux-arm64.tar.gz" -C "$HOME" toolchain
           ls -lh "$HOME/circt-mlir-linux-arm64.tar.gz"
 
