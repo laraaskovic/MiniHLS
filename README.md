@@ -78,12 +78,34 @@ minihls/
   docs/           plan, guides
 ```
 
-Planned CLI:
+CLI, with what works today marked:
 
 ```
-minihls emit-mlir examples/dot.hc --top dot            # software-level MLIR
+minihls parse     examples/dot.hc --print-ast                    # works
+minihls check     examples/dot.hc --report-truncations           # works
+minihls run       examples/max3.hc --top max3 --arg a=1 --arg b=7 --arg c=3
+                                                                 # works
+minihls emit-mlir examples/dot.hc --top dot --optimize --report ops
+                                                                 # needs MLIR
 minihls compile   examples/dot.hc --top dot --clock-ns 6.4 --emit-sv dot.sv --report schedule
+                                                                 # milestone P7
 ```
+
+## Status
+
+| Stage | State |
+| ----- | ----- |
+| Lexer, parser, AST, diagnostics | done, tested |
+| Semantic analysis, width rules, AST interpreter | done, 118 unit tests |
+| MLIRGen, LLVM-JIT execution check, optimization pipeline | written, not yet compiled |
+| Scheduling, hardware generation, Verilog | not started |
+
+The middle row is blocked on one thing: MLIR and CIRCT are not installed. This
+machine's WSL is `aarch64`, and CIRCT publishes development packages only for
+`linux-x64`, so they have to be built from source — see
+[docs/MILESTONES.md](docs/MILESTONES.md), milestone P0. Until then CMake prints
+`minihls: MLIR stages OFF`, skips `src/mlirgen/`, `src/transforms/`, and
+`tests/mlir/`, and everything else builds and passes.
 
 ## Building and testing
 

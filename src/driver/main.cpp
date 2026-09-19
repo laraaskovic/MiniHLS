@@ -3,7 +3,8 @@
 // Each command runs the pipeline as far as it needs: `parse` stops after the
 // parser, `check` after semantic analysis, and `run` executes the program with
 // the AST interpreter -- the golden reference every later stage is compared
-// against. Later milestones add `emit-mlir` and `compile`.
+// against. `emit-mlir`, built when MLIR is available, prints the program in
+// MLIR's software-level dialects. Later milestones add `compile`.
 
 #include "frontend/ast_printer.hpp"
 #include "frontend/diagnostics.hpp"
@@ -13,6 +14,15 @@
 #include "sema/sema.hpp"
 #include "support/int128.hpp"
 
+#ifdef MINIHLS_HAVE_MLIR
+#include "mlirgen/mlirgen.hpp"
+#include "transforms/transforms.hpp"
+
+#include "mlir/IR/MLIRContext.h"
+#include "llvm/Support/raw_ostream.h"
+#endif
+
+#include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -31,11 +41,18 @@ commands:
   parse <file.hc>             parse the file and report any diagnostics
   check <file.hc>             parse and type-check the file
   run <file.hc> --top <f>     run function <f> with the reference interpreter
+  emit-mlir <file.hc> --top <f>
+                              print function <f> as MLIR (func/arith/scf/memref)
 
 options:
   --print-ast                 parse: print the parsed program back out as source
   --report-truncations        check: list every assignment that drops bits
-  --top <name>                run: the function to execute
+  --top <name>                run, emit-mlir: the function to use
+  --optimize                  emit-mlir: run the optimization pipeline first
+                              (canonicalize, cse, unroll, bit-width narrowing,
+                              sccp)
+  --report ops                emit-mlir: operator counts and total datapath
+                              bits, before and after --optimize
   --arg <name>=<value>        run: a parameter value; repeat for each parameter.
                               Scalars take one integer (decimal, 0x hex, or 0b
                               binary, optionally negative). Arrays and input
@@ -56,6 +73,8 @@ struct Options {
   std::string path;
   bool print_ast = false;
   bool report_truncations = false;
+  bool optimize = false;
+  std::vector<std::string> reports;
   std::string top;
   std::vector<std::pair<std::string, std::string>> args;
 };
@@ -262,7 +281,8 @@ int main(int argc, char** argv) {
 
   Options options;
   options.command = args.front();
-  if (options.command != "parse" && options.command != "check" && options.command != "run") {
+  if (options.command != "parse" && options.command != "check" && options.command != "run" &&
+      options.command != "emit-mlir") {
     return fail_usage("unknown command '" + options.command + "'");
   }
 
@@ -277,6 +297,13 @@ int main(int argc, char** argv) {
       options.print_ast = true;
     } else if (arg == "--report-truncations") {
       options.report_truncations = true;
+    } else if (arg == "--optimize") {
+      options.optimize = true;
+    } else if (arg == "--report") {
+      const auto value = next();
+      if (!value) return fail_usage("--report needs a report name");
+      if (*value != "ops") return fail_usage("unknown report '" + *value + "'");
+      options.reports.push_back(*value);
     } else if (arg == "--top") {
       const auto value = next();
       if (!value) return fail_usage("--top needs a function name");
@@ -297,8 +324,8 @@ int main(int argc, char** argv) {
     }
   }
   if (options.path.empty()) return fail_usage("no input file given");
-  if (options.command == "run" && options.top.empty()) {
-    return fail_usage("run needs --top <function>");
+  if ((options.command == "run" || options.command == "emit-mlir") && options.top.empty()) {
+    return fail_usage(options.command + " needs --top <function>");
   }
 
   std::ifstream stream(options.path, std::ios::binary);
@@ -349,6 +376,36 @@ int main(int argc, char** argv) {
               << "'\n";
     return 1;
   }
+  if (options.command == "emit-mlir") {
+#ifdef MINIHLS_HAVE_MLIR
+    mlir::MLIRContext context;
+    const auto module = minihls::mlirgen::generate(context, *function, file, diagnostics);
+    if (report_errors() || !module) return 1;
+
+    const bool wants_ops =
+        std::find(options.reports.begin(), options.reports.end(), "ops") != options.reports.end();
+    // Measured before the pipeline runs, since it rewrites the module in place.
+    const auto before = wants_ops ? minihls::transforms::measure(*module)
+                                  : minihls::transforms::Metrics{};
+    if (options.optimize && !minihls::transforms::optimize(*module)) {
+      std::cerr << "minihls: the optimization pipeline failed\n";
+      return 1;
+    }
+    module->print(llvm::outs());
+    llvm::outs() << "\n";
+    if (wants_ops) {
+      // The report goes to stderr so that stdout stays a valid .mlir file.
+      std::cerr << "\n"
+                << minihls::transforms::format_report(before,
+                                                      minihls::transforms::measure(*module));
+    }
+    return 0;
+#else
+    std::cerr << "minihls: this build has no MLIR support; see MINIHLS_MLIR in the README\n";
+    return 1;
+#endif
+  }
+
   minihls::interp::Inputs inputs;
   if (!build_inputs(*function, options, inputs)) return 1;
   const minihls::interp::Outputs outputs = minihls::interp::run_ast(*function, inputs);

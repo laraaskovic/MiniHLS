@@ -43,10 +43,45 @@ add_library(minihls_interp
   interp/io.cpp
   interp/io.hpp
   interp/ast_interp.cpp
-  interp/ast_interp.hpp)
+  interp/ast_interp.hpp
+  interp/random_inputs.cpp
+  interp/random_inputs.hpp)
 
 target_link_libraries(minihls_interp
   PUBLIC minihls_sema
   PRIVATE minihls_warnings)
+
+if(MINIHLS_MLIR)
+  # MLIRGen: the checked AST to func/arith/scf/memref (milestone P3).
+  add_library(minihls_mlirgen
+    mlirgen/mlirgen.cpp
+    mlirgen/mlirgen.hpp)
+  target_link_libraries(minihls_mlirgen
+    PUBLIC minihls_sema minihls_mlir_settings
+           MLIRIR MLIRArithDialect MLIRFuncDialect MLIRMemRefDialect MLIRSCFDialect
+    PRIVATE minihls_warnings)
+
+  # The optimization pipeline: MLIR's own passes plus ours (milestone P4).
+  add_library(minihls_transforms
+    transforms/transforms.cpp
+    transforms/transforms.hpp)
+  target_link_libraries(minihls_transforms
+    PUBLIC minihls_mlir_settings
+           MLIRIR MLIRPass MLIRTransforms
+           MLIRArithDialect MLIRSCFDialect MLIRSCFUtils
+    PRIVATE minihls_warnings)
+
+  # The execution check: lower to LLVM, JIT, and run against test vectors.
+  add_library(minihls_mlir_execution
+    mlirgen/execution.cpp
+    mlirgen/execution.hpp)
+  target_link_libraries(minihls_mlir_execution
+    PUBLIC minihls_mlirgen minihls_interp
+    PRIVATE minihls_warnings
+            MLIRPass MLIRExecutionEngine
+            MLIRSCFToControlFlow MLIRArithToLLVM MLIRMemRefToLLVM MLIRFuncToLLVM
+            MLIRControlFlowToLLVM MLIRReconcileUnrealizedCasts
+            MLIRBuiltinToLLVMIRTranslation MLIRLLVMToLLVMIRTranslation)
+endif()
 
 add_subdirectory(driver)

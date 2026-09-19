@@ -31,6 +31,8 @@ class Checked {
     return checked_.functions.at(index);
   }
   const ast::Program& program() const { return *program_; }
+  const SourceFile& file() const { return *file_; }
+  DiagnosticEngine& mutable_diagnostics() { return *diagnostics_; }
 
  private:
   std::unique_ptr<SourceFile> file_;

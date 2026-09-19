@@ -25,6 +25,9 @@ endif()
 option(MINIHLS_COSIM "Build the Verilator co-simulation test suite" ON)
 option(MINIHLS_WERROR "Treat compiler warnings as errors" OFF)
 option(MINIHLS_SANITIZE "Build with AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
+option(MINIHLS_MLIR "Build the stages that use MLIR and CIRCT" ON)
+set(MINIHLS_CIRCT_PREFIX "$ENV{HOME}/.local/circt" CACHE PATH
+    "Install prefix of LLVM, MLIR, and CIRCT (see scripts/build_circt.sh)")
 
 # Sanitizers have to reach the whole program, including dependencies, so they go
 # on as directory-wide options rather than through the warnings interface target.
@@ -61,6 +64,43 @@ FetchContent_Declare(googletest
   FIND_PACKAGE_ARGS NAMES GTest)
 FetchContent_MakeAvailable(googletest)
 
+# MLIR and CIRCT come from one install prefix, built by scripts/build_circt.sh
+# or unpacked from a CIRCT release. Without them the front end, interpreter,
+# and existing tests still build, which keeps a fresh checkout usable.
+if(MINIHLS_MLIR)
+  find_package(MLIR CONFIG HINTS "${MINIHLS_CIRCT_PREFIX}/lib/cmake/mlir")
+  find_package(CIRCT CONFIG HINTS "${MINIHLS_CIRCT_PREFIX}/lib/cmake/circt")
+  find_program(MINIHLS_CIRCT_OPT circt-opt HINTS "${MINIHLS_CIRCT_PREFIX}/bin")
+  if(MLIR_FOUND AND CIRCT_FOUND AND MINIHLS_CIRCT_OPT)
+    message(STATUS "minihls: MLIR            ${MLIR_DIR}")
+    message(STATUS "minihls: CIRCT           ${CIRCT_DIR}")
+    # AddMLIR and TableGen are needed from milestone P5 on, to define our own
+    # dialect with ODS.
+    list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}" "${LLVM_CMAKE_DIR}")
+    include(TableGen)
+    include(AddLLVM)
+    include(AddMLIR)
+
+    # Code that uses MLIR is compiled the way LLVM was: without RTTI, since a
+    # class deriving from an LLVM class otherwise needs type information LLVM
+    # never emitted. LLVM's headers are marked as system headers so this
+    # project's warning flags apply only to its own code.
+    add_library(minihls_mlir_settings INTERFACE)
+    target_include_directories(minihls_mlir_settings SYSTEM INTERFACE
+      ${LLVM_INCLUDE_DIRS} ${MLIR_INCLUDE_DIRS} ${CIRCT_INCLUDE_DIRS})
+    target_compile_definitions(minihls_mlir_settings INTERFACE ${LLVM_DEFINITIONS})
+    if(NOT LLVM_ENABLE_RTTI)
+      target_compile_options(minihls_mlir_settings INTERFACE -fno-rtti)
+    endif()
+  else()
+    message(WARNING
+      "MLIR or CIRCT not found under ${MINIHLS_CIRCT_PREFIX}; the MLIR-based stages "
+      "are skipped. Build them with scripts/build_circt.sh, point "
+      "-DMINIHLS_CIRCT_PREFIX at an install, or configure with -DMINIHLS_MLIR=OFF.")
+    set(MINIHLS_MLIR OFF)
+  endif()
+endif()
+
 enable_testing()
 
 add_subdirectory(src)
@@ -68,3 +108,4 @@ add_subdirectory(tests)
 
 message(STATUS "minihls: build type      ${CMAKE_BUILD_TYPE}")
 message(STATUS "minihls: co-simulation   ${MINIHLS_COSIM}")
+message(STATUS "minihls: MLIR stages     ${MINIHLS_MLIR}")

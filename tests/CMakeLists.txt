@@ -1,5 +1,9 @@
 add_subdirectory(unit)
 
+if(MINIHLS_MLIR)
+  add_subdirectory(mlir)
+endif()
+
 if(MINIHLS_COSIM)
   # Verilator installs its CMake integration under <prefix>/share/verilator.
   find_package(verilator HINTS $ENV{VERILATOR_ROOT} ${VERILATOR_ROOT})
