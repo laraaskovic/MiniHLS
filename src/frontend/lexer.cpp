@@ -25,6 +25,20 @@ std::vector<Token> Lexer::tokenize() {
 
 Token Lexer::next() {
   skipTrivia();
+    while (pos_ < src_.text().size()) {
+        char c = src_.text()[pos_];
+        bool known = isIdentStart(c) || isDigit(c) || c == '#' ||
+                                 c == '+' || c == '-' || c == '*' || c == '/' ||
+                                 c == '%' || c == '~' || c == '&' || c == '|' ||
+                                 c == '^' || c == '<' || c == '>' || c == '!' ||
+                                 c == '=' || c == '?' || c == ':' || c == '(' ||
+                                 c == ')' || c == '{' || c == '}' || c == '[' ||
+                                 c == ']' || c == ',' || c == ';';
+        if (known) break;
+        diags_.error({{pos_}, {pos_ + 1}}, "unrecognised character");
+        ++pos_;
+        skipTrivia();
+    }
   if (pos_ >= src_.text().size())
     return Token{Tok::Eof, {{pos_}, {pos_}}, {}, 0, 0, false};
 
@@ -253,22 +267,7 @@ Token Lexer::lexOperator() {
         case ']': return make(Tok::RBracket, 1); case ',': return make(Tok::Comma, 1);
         case ';': return make(Tok::Semi, 1);
         default:
-            diags_.error({{start}, {start + 1}}, "unrecognised character");
-            ++pos_;
-            while (pos_ < source.size()) {
-                char c = source[pos_];
-                bool startsToken = isIdentStart(c) || isDigit(c) || c == '#' ||
-                                    c == '+' || c == '-' || c == '*' || c == '/' ||
-                                    c == '%' || c == '~' || c == '&' || c == '|' ||
-                                    c == '^' || c == '<' || c == '>' || c == '!' ||
-                                    c == '=' || c == '?' || c == ':' || c == '(' ||
-                                    c == ')' || c == '{' || c == '}' || c == '[' ||
-                                    c == ']' || c == ',' || c == ';';
-                if (startsToken || c == ' ' || c == '\t' || c == '\n' || c == '\r') break;
-                diags_.error({{pos_}, {pos_ + 1}}, "unrecognised character");
-                ++pos_;
-            }
-            return next();
+            return Token{Tok::Eof, {{start}, {start}}, {}, 0, 0, false};
     }
 }
 
