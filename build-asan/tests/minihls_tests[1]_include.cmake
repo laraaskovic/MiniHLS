@@ -1,0 +1,5 @@
+if(EXISTS "/home/askovicl/MiniHLS/build-asan/tests/minihls_tests[1]_tests.cmake")
+  include("/home/askovicl/MiniHLS/build-asan/tests/minihls_tests[1]_tests.cmake")
+else()
+  add_test(minihls_tests_NOT_BUILT minihls_tests_NOT_BUILT)
+endif()

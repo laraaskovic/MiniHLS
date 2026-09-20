@@ -1,0 +1,2 @@
+/usr/bin/ar qc libminihls_core.a CMakeFiles/minihls_core.dir/version.cpp.o CMakeFiles/minihls_core.dir/support/bits.cpp.o CMakeFiles/minihls_core.dir/frontend/source.cpp.o CMakeFiles/minihls_core.dir/frontend/token.cpp.o CMakeFiles/minihls_core.dir/frontend/diagnostics.cpp.o CMakeFiles/minihls_core.dir/frontend/lexer.cpp.o CMakeFiles/minihls_core.dir/frontend/parser.cpp.o CMakeFiles/minihls_core.dir/frontend/ast_printer.cpp.o
+/usr/bin/ranlib libminihls_core.a

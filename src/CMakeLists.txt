@@ -5,7 +5,9 @@ add_library(minihls_core
   frontend/source.cpp
   frontend/token.cpp
   frontend/diagnostics.cpp
-  frontend/lexer.cpp)
+  frontend/lexer.cpp
+  frontend/parser.cpp
+  frontend/ast_printer.cpp)
 target_include_directories(minihls_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_executable(minihls main.cpp)
