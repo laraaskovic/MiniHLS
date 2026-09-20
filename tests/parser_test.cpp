@@ -101,13 +101,14 @@ TEST(Parser, CastsAndIndexing) {
 // ========================= structure rejected ========================
 
 TEST(Parser, ForHeaderMustMatchTheRestrictedShape) {
-  auto bad = [](const char* header) {
+  auto hasError = [](const char* header) {
     return programHasError(std::string("i16 f() { ") + header + " { } return 0; }");
   };
-  EXPECT_TRUE(bad("for (i = 0; i < 8; i = i + 1)"));        // no type in init
-  EXPECT_TRUE(bad("for (u4 i = 0; i < n; i = i + 1)"));     // limit not constant… (E3)
-  EXPECT_TRUE(bad("for (u4 i = 0; i < 8; i = i * 2)"));     // step must be + or -
-  EXPECT_TRUE(bad("for (u4 i = 0; i != 8; i = i + 1)"));    // relOp must be < <= > >=
+  EXPECT_TRUE(hasError("for (i = 0; i < 8; i = i + 1)"));        // no type in init
+  EXPECT_FALSE(hasError("for (u4 i = 0; i < n; i = i + 1)"));   // const-ness is E3
+  EXPECT_TRUE(hasError("for (u4 i = 0; i < 8; i = i * 2)"));   // step must be + or -
+  EXPECT_TRUE(hasError("for (u4 i = 0; i != 8; i = i + 1)"));  // relOp must be < <= > >=
+  EXPECT_TRUE(hasError("for (u4 i = 0; j < 8; k = k + 1)"));    // names must match
 }
 
 TEST(Parser, ReadIsNotAnExpression) {
