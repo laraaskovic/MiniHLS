@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wsl -e bash -lc 'until grep -qE \"tests passed|tests failed|Error|error:\" ~/final.log 2>/dev/null; do sleep 5; done; grep -E \"tests passed|tests failed|Error|error:\" ~/final.log | head -3')",
+      "Bash(wsl -e bash -lc 'rm -f ~/final.log ~/minihls_build.log')",
+      "Bash(file scripts/*.sh characterize/yosys/*.ys)",
+      "Bash(git add *)",
+      "Bash(git update-index *)",
+      "Bash(wsl -e bash -lc 'cd /mnt/c/Users/laraa/Documents/GitHub/MiniHLS && cmake -S . -B ~/.cache/minihls/build -DCMAKE_BUILD_TYPE=Release > /dev/null 2>&1 && cmake --build ~/.cache/minihls/build -j8 2>&1 | grep -E \"error:|warning:|Error\" | head -40; echo \"---done---\"')",
+      "Bash(wsl -e bash -lc '~/.cache/minihls/build/tests/unit/minihls_unit_tests 2>&1 | tail -40')",
+      "Bash(wsl -e bash -lc '~/.cache/minihls/build/src/driver/minihls parse /tmp/bad.hc 2>&1 | head -8')",
+      "Bash(git rm *)"
+    ]
+  }
+}
