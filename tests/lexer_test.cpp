@@ -72,6 +72,27 @@ TEST(Lexer, TrailingUnderscoreIsAnError) {
   bool err = false; lex("100_", &err); EXPECT_TRUE(err);
 }
 
+TEST(Lexer, InvalidDigitsStayInOneIntegerToken) {
+  bool err = false;
+  auto tokens = lex("0b12 123abc", &err);
+  EXPECT_TRUE(err);
+  ASSERT_EQ(tokens.size(), 3u);
+  EXPECT_EQ(tokens[0].kind, Tok::IntLiteral);
+  EXPECT_EQ(tokens[0].text, "0b12");
+  EXPECT_EQ(tokens[1].kind, Tok::IntLiteral);
+  EXPECT_EQ(tokens[1].text, "123abc");
+  EXPECT_EQ(tokens[2].kind, Tok::Eof);
+}
+
+TEST(Lexer, OverflowHasItsOwnDiagnostic) {
+  SourceFile source("<test>", "0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
+  Diagnostics diagnostics(source);
+  auto tokens = Lexer(source, diagnostics).tokenize();
+  ASSERT_EQ(tokens.size(), 2u);
+  ASSERT_EQ(diagnostics.all().size(), 1u);
+  EXPECT_EQ(diagnostics.all()[0].message, "integer literal too large");
+}
+
 // longest-match operators
 
 TEST(Lexer, MultiCharOperatorsWinOverSingle) {
@@ -97,8 +118,21 @@ TEST(Lexer, BlockCommentsDoNotNest) {
   EXPECT_EQ(k[0], Tok::IntLiteral);
 }
 
-TEST(Lexer, UnterminatedBlockCommentIsAnError) {
-  bool err = false; lex("/* forever", &err); EXPECT_TRUE(err);
+TEST(Lexer, UnterminatedBlockCommentProducesNoTokens) {
+  bool err = false;
+  auto tokens = lex("/* forever", &err);
+  EXPECT_TRUE(err);
+  ASSERT_EQ(tokens.size(), 1u);
+  EXPECT_EQ(tokens[0].kind, Tok::Eof);
+}
+
+TEST(Lexer, ManyInvalidCharactersDoNotRecurse) {
+  bool err = false;
+  std::string input(100000, '@');
+  auto tokens = lex(input, &err);
+  EXPECT_TRUE(err);
+  ASSERT_EQ(tokens.size(), 1u);
+  EXPECT_EQ(tokens[0].kind, Tok::Eof);
 }
 
 // locations

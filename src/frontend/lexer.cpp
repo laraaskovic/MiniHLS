@@ -71,6 +71,7 @@ void Lexer::skipTrivia() {
                     }
                     if (!closed) {
                         diags_.error({{startPos}, {startPos + 2}}, "unterminated block comment");
+                        pos_ = static_cast<uint32_t>(src_.text().size());
                     }
                     continue;
                 }
@@ -159,14 +160,15 @@ Token Lexer::lexNumber() {
 
     u128 value = 0;
     bool hasDigit = false;
-    bool error = false;
+    bool invalid = false;
+    bool overflow = false;
     while (pos_ < src_.text().size()) {
         char c = src_.text()[pos_];
         if (c == '_') {
             bool nextIsDigit = pos_ + 1 < src_.text().size() &&
                                                  digitValue(src_.text()[pos_ + 1]) >= 0 &&
                                                  digitValue(src_.text()[pos_ + 1]) < static_cast<int>(base);
-            if (!hasDigit || !nextIsDigit) error = true;
+            if (!hasDigit || !nextIsDigit) invalid = true;
             ++pos_;
             continue;
         }
@@ -174,15 +176,23 @@ Token Lexer::lexNumber() {
         if (digit < 0 || digit >= static_cast<int>(base)) break;
         hasDigit = true;
         if (value > (~static_cast<u128>(0) - static_cast<unsigned>(digit)) / base)
-            error = true;
+            overflow = true;
         else
             value = value * base + static_cast<unsigned>(digit);
         ++pos_;
     }
 
-    if (!hasDigit || error)
+    if (pos_ < src_.text().size() && isIdentChar(src_.text()[pos_])) {
+        invalid = true;
+        while (pos_ < src_.text().size() && isIdentChar(src_.text()[pos_])) ++pos_;
+    }
+    if (!hasDigit)
+        invalid = true;
+    if (overflow)
+        diags_.error({{start}, {pos_}}, "integer literal too large");
+    else if (invalid)
         diags_.error({{start}, {pos_}}, hasDigit ? "invalid integer literal" :
-                                                                                         "integer literal requires digits");
+                                                   "integer literal requires digits");
     return Token{Tok::IntLiteral, {{start}, {pos_}},
                              std::string_view(src_.text().data() + start, pos_ - start),
                              value, 0, false};
@@ -245,6 +255,19 @@ Token Lexer::lexOperator() {
         default:
             diags_.error({{start}, {start + 1}}, "unrecognised character");
             ++pos_;
+            while (pos_ < source.size()) {
+                char c = source[pos_];
+                bool startsToken = isIdentStart(c) || isDigit(c) || c == '#' ||
+                                    c == '+' || c == '-' || c == '*' || c == '/' ||
+                                    c == '%' || c == '~' || c == '&' || c == '|' ||
+                                    c == '^' || c == '<' || c == '>' || c == '!' ||
+                                    c == '=' || c == '?' || c == ':' || c == '(' ||
+                                    c == ')' || c == '{' || c == '}' || c == '[' ||
+                                    c == ']' || c == ',' || c == ';';
+                if (startsToken || c == ' ' || c == '\t' || c == '\n' || c == '\r') break;
+                diags_.error({{pos_}, {pos_ + 1}}, "unrecognised character");
+                ++pos_;
+            }
             return next();
     }
 }

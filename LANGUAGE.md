@@ -126,6 +126,11 @@ literals.
 
 A leading `0` is not an octal prefix: `0755` is seven hundred and fifty-five.
 
+An integer literal may not be immediately followed by an identifier character.
+For example, `123abc`, `0b12`, and `0xFG` are invalid integer literals rather
+than separate integer and identifier tokens. This catches missing separators
+and digits that are not valid in the selected base.
+
 ### Operators and punctuation
 
 ```
