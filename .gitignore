@@ -21,3 +21,4 @@ out/
 .DS_Store
 *.swp
 compile_commands.json
+obj_dir/
