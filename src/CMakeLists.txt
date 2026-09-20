@@ -1,5 +1,11 @@
 # src/CMakeLists.txt
-add_library(minihls_core version.cpp support/bits.cpp)
+add_library(minihls_core
+  version.cpp
+  support/bits.cpp
+  frontend/source.cpp
+  frontend/token.cpp
+  frontend/diagnostics.cpp
+  frontend/lexer.cpp)
 target_include_directories(minihls_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_executable(minihls main.cpp)
