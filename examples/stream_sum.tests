@@ -1,0 +1,19 @@
+# i32 stream_sum(in stream<i16> s, out stream<i32> r)
+# s -> r return
+#
+# The right-hand side is the out stream first, then the returned value.
+
+[1 2 3 4 5 6 7 8] -> [1 3 6 10 15 21 28 36] 36
+[0 0 0 0 0 0 0 0] -> [0 0 0 0 0 0 0 0] 0
+[-1 -2 -3 -4 -5 -6 -7 -8] -> [-1 -3 -6 -10 -15 -21 -28 -36] -36
+
+# the accumulator leaves i16 range on the second element and keeps
+# going: the running totals are i32, the elements read are i16
+[32767 32767 32767 32767 32767 32767 32767 32767] -> [32767 65534 98301 131068 163835 196602 229369 262136] 262136
+[-32768 -32768 -32768 -32768 -32768 -32768 -32768 -32768] -> [-32768 -65536 -98304 -131072 -163840 -196608 -229376 -262144] -262144
+
+# alternating: each partial sum depends on the one before it, so any
+# reordering of the reads shows up in the out stream even though the
+# returned total would still be right
+[32767 -32768 32767 -32768 32767 -32768 32767 -32768] -> [32767 -1 32766 -2 32765 -3 32764 -4] -4
+[1 -1 1 -1 1 -1 1 -1] -> [1 0 1 0 1 0 1 0] 0

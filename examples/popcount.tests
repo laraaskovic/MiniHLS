@@ -1,0 +1,27 @@
+# u5 popcount(u16 x)
+# x -> result
+# x is unsigned; the hex spelling of each input is in the comment
+
+0 -> 0
+1 -> 1
+2 -> 1
+255 -> 8
+256 -> 1
+4096 -> 1
+
+# 0x8000: the top bit alone. A signed shift here would smear sign bits
+# down and answer 16.
+32768 -> 1
+
+# 0x7FFF, one short of the top bit
+32767 -> 15
+
+# 0xFFFF and 0xFFFE: the maximum, and the maximum minus one bit.
+# 16 is why the result is u5 and the loop counter is u5.
+65535 -> 16
+65534 -> 15
+
+# 0xAAAA, 0x5555, 0x1111: alternating and spread patterns
+43690 -> 8
+21845 -> 8
+4369 -> 4

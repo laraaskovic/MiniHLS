@@ -1,0 +1,25 @@
+# i32 fir(i16 x[8])
+# taps are const in fir.hc: { 1, -2, 3, -4, 4, -3, 2, -1 }
+# x -> result
+
+[0 0 0 0 0 0 0 0] -> 0
+
+# impulses: each one reads back a single tap, so these three cases pin the
+# tap order. Reversed taps would answer -1, -4 and 1 instead.
+[1 0 0 0 0 0 0 0] -> 1
+[0 0 0 1 0 0 0 0] -> -4
+[0 0 0 0 0 0 0 1] -> -1
+
+# the taps sum to zero, so any constant input must come out exactly 0,
+# including at the top of the input range
+[1 1 1 1 1 1 1 1] -> 0
+[100 100 100 100 100 100 100 100] -> 0
+[32767 32767 32767 32767 32767 32767 32767 32767] -> 0
+
+# 1*1 - 2*2 + 3*3 - 4*4 + 4*5 - 3*6 + 2*7 - 1*8
+[1 2 3 4 5 6 7 8] -> -2
+
+# i16's corners: -32768 * 1, and the alternating input that makes every
+# term positive (655350 is well inside i32, so nothing truncates here)
+[-32768 0 0 0 0 0 0 0] -> -32768
+[32767 -32768 32767 -32768 32767 -32768 32767 -32768] -> 655350
