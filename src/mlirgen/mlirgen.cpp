@@ -12,9 +12,6 @@
 namespace minihls {
 namespace {
 
-// NOTE on `Op::create(builder, loc, ...)`: the older `builder.create<Op>(loc, ...)`
-// spelling still compiles, but LLVM marked it [[deprecated]] — every use would
-// warn under -Wall. Same operation, arguments shifted by one.
 class MLIRGen {
 public:
   MLIRGen(mlir::MLIRContext& ctx, const SourceFile& src, Diagnostics& diags)
