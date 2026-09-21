@@ -19,4 +19,8 @@ struct Compilation {
 
 Compilation compileFile(const std::string& path);
 
+// The same pipeline over text already in memory. `name` is what diagnostics
+// and MLIR locations report as the file. compileFile is this plus the read.
+Compilation compileText(std::string name, std::string text);
+
 } // namespace minihls

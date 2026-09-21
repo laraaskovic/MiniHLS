@@ -49,10 +49,14 @@ struct Index : Expr {                       // a[i] — array name only, per the
 };
 
 struct Cast : Expr {                        // T(e)
-  Type type;
+  // NOT `type`: that would shadow Expr::type, and the two mean different
+  // things. `target` is what the source wrote and is set by the parser;
+  // Expr::type is what the checker concluded. They agree after sema, but
+  // only `target` is meaningful before it.
+  Type target;
   ExprPtr operand;
   Cast(Range r, Type t, ExprPtr o)
-      : Expr(ExprKind::Cast, r), type(t), operand(std::move(o)) {}
+      : Expr(ExprKind::Cast, r), target(t), operand(std::move(o)) {}
 };
 
 struct Unary : Expr {                       // - + ~ !

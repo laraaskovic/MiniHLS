@@ -8,14 +8,9 @@
 
 namespace minihls {
 
-Compilation compileFile(const std::string& path) {
+Compilation compileText(std::string name, std::string text) {
   Compilation c;
-  auto loaded = SourceFile::load(path);
-  if (!loaded) {
-    std::cerr << "minihls: cannot open " << path << "\n";
-    return c;
-  }
-  c.source = std::make_unique<SourceFile>(std::move(*loaded));
+  c.source = std::make_unique<SourceFile>(std::move(name), std::move(text));
   c.diags  = std::make_unique<Diagnostics>(*c.source);
 
   auto tokens = Lexer(*c.source, *c.diags).tokenize();
@@ -28,6 +23,15 @@ Compilation compileFile(const std::string& path) {
 
   c.ok = !c.diags->hasErrors();
   return c;
+}
+
+Compilation compileFile(const std::string& path) {
+  auto loaded = SourceFile::load(path);
+  if (!loaded) {
+    std::cerr << "minihls: cannot open " << path << "\n";
+    return {};
+  }
+  return compileText(loaded->path(), loaded->text());
 }
 
 } // namespace minihls

@@ -51,7 +51,7 @@ Bits Interpreter::eval(Expr& e) {
 
   case ExprKind::Cast: {
     auto& n = static_cast<Cast&>(e);
-    return castTo(eval(*n.operand), n.type.width, n.type.isSigned);
+    return castTo(eval(*n.operand), n.target.width, n.target.isSigned);
   }
 
   case ExprKind::Unary: {

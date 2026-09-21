@@ -42,7 +42,7 @@ std::string expr(const Expr& value) {
     }
     case ExprKind::Cast: {
       const auto& node = static_cast<const Cast&>(value);
-      return typeName(node.type) + "(" + expr(*node.operand) + ")";
+      return typeName(node.target) + "(" + expr(*node.operand) + ")";
     }
     case ExprKind::Unary: {
       const auto& node = static_cast<const Unary&>(value);

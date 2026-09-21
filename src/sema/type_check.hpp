@@ -14,6 +14,7 @@ public:
 private:
   Type infer(Expr& expr);
   void checkExpr(Expr& expr, Type expected);
+  void pinPoly(Expr& expr, Type expected);
   Type widthRule(Tok op, Type left, Type right, Range range);
   bool assignable(Type from, Type to) const;
   bool fits(u128 value, Type type) const;

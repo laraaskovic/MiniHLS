@@ -59,7 +59,7 @@ std::optional<Bits> ConstantEvaluator::eval(Expr& expr, bool diagnose) {
     case ExprKind::Cast: {
       auto& node = static_cast<Cast&>(expr);
       auto operand = eval(*node.operand, diagnose);
-      return operand ? std::optional<Bits>(castTo(*operand, node.type.width, node.type.isSigned))
+      return operand ? std::optional<Bits>(castTo(*operand, node.target.width, node.target.isSigned))
                      : std::nullopt;
     }
     case ExprKind::Unary: {

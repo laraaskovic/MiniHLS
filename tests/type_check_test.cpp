@@ -77,6 +77,44 @@ TEST(TypeChecker, ExamplesTypeCheck) {
   EXPECT_FALSE(hasTypeError("i32 f(i16 a, i16 b) { i17 d = a - b; return i32(d); }"));
 }
 
+// When a whole subtree is untyped literals, the context's type has to reach
+// every node in it, not just the root. `a > b ? 1 : 0` in an i16 return
+// position used to leave both arms poly at the default width of 1 — right by
+// accident for u1, an i1 where an i16 belonged for anything else. MLIRGen is
+// the first consumer that reads a leaf's own Type, which is where it showed.
+TEST(TypeChecker, ContextPinsEveryNodeOfAPolyLiteralSubtree) {
+  auto parsed = parseAndResolve("i16 f(i16 a, i16 b) { return a > b ? 1 : 0; }");
+  ASSERT_FALSE(parsed.diagnostics->hasErrors());
+  TypeChecker(*parsed.diagnostics).check(parsed.program);
+  ASSERT_FALSE(parsed.diagnostics->hasErrors());
+
+  auto& returned = static_cast<Return&>(*parsed.program.fn.body->stmts[0]);
+  auto& ternary = static_cast<Ternary&>(*returned.value);
+  for (Expr* arm : {ternary.thenE.get(), ternary.elseE.get()}) {
+    EXPECT_TRUE(arm->typeKnown);
+    EXPECT_FALSE(arm->type.isPoly);
+    EXPECT_EQ(arm->type.width, 16u);
+    EXPECT_TRUE(arm->type.isSigned);
+  }
+  EXPECT_EQ(ternary.type.width, 16u);
+}
+
+// The same rule one level deeper: both operands of a poly binary.
+TEST(TypeChecker, ContextReachesInsideAPolyBinary) {
+  auto parsed = parseAndResolve("i32 f() { i32 x = 1 + 2; return x; }");
+  ASSERT_FALSE(parsed.diagnostics->hasErrors());
+  TypeChecker(*parsed.diagnostics).check(parsed.program);
+  ASSERT_FALSE(parsed.diagnostics->hasErrors());
+
+  auto& declaration = static_cast<VarDecl&>(*parsed.program.fn.body->stmts[0]);
+  auto& sum = static_cast<Binary&>(*declaration.init);
+  EXPECT_EQ(sum.type.width, 32u);
+  EXPECT_EQ(sum.lhs->type.width, 32u);
+  EXPECT_EQ(sum.rhs->type.width, 32u);
+  EXPECT_FALSE(sum.lhs->type.isPoly);
+  EXPECT_FALSE(sum.rhs->type.isPoly);
+}
+
 TEST(TypeChecker, AllExamplesTypeCheck) {
   for (const char* name : {"max3", "abs_diff", "popcount", "dot", "fir", "stream_sum"}) {
     auto text = readFile(std::string(MINIHLS_EXAMPLES_DIR) + "/" + name + ".hc");

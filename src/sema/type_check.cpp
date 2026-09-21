@@ -78,7 +78,7 @@ Type TypeChecker::infer(Expr& expr) {
     case ExprKind::Cast: {
       auto& node = static_cast<Cast&>(expr);
       infer(*node.operand);
-      result = node.type;
+      result = node.target;
       break;
     }
     case ExprKind::Unary: {
@@ -125,13 +125,44 @@ Type TypeChecker::infer(Expr& expr) {
   return result;
 }
 
+// Give a poly expression its context's type, and every poly node underneath
+// it the same one. Pinning only the top node would leave the children at the
+// default `Type{}` — width 1 — which is right by accident whenever the
+// expected type happens to be one bit wide, and silently wrong otherwise.
+// A node stops being poly as soon as anything concrete reaches it, so the
+// recursion only walks subtrees built purely from untyped literals.
+void TypeChecker::pinPoly(Expr& expr, Type expected) {
+  if (!expr.type.isPoly) return;
+  expr.type = expected;
+  expr.typeKnown = true;
+  switch (expr.kind) {
+    case ExprKind::Unary:
+      pinPoly(*static_cast<Unary&>(expr).operand, expected);
+      return;
+    case ExprKind::Binary: {
+      auto& node = static_cast<Binary&>(expr);
+      pinPoly(*node.lhs, expected);
+      pinPoly(*node.rhs, expected);
+      return;
+    }
+    case ExprKind::Ternary: {
+      // The condition is already u1; only the arms carry the value's type.
+      auto& node = static_cast<Ternary&>(expr);
+      pinPoly(*node.thenE, expected);
+      pinPoly(*node.elseE, expected);
+      return;
+    }
+    default:                    // IntLit is the leaf; nothing else is poly
+      return;
+  }
+}
+
 void TypeChecker::checkExpr(Expr& expr, Type expected) {
   Type actual = infer(expr);
   if (actual.isPoly) {
     if (!fits(actual.constValue, expected))
       report(expr.range, "constant does not fit " + typeName(expected));
-    expr.type = expected;
-    expr.typeKnown = true;
+    pinPoly(expr, expected);
     return;
   }
   if (!assignable(actual, expected))
