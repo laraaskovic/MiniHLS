@@ -11,7 +11,10 @@ add_library(minihls_core
   sema/resolver.cpp
   sema/type_check.cpp
   sema/const_eval.cpp
-  interp/interpreter.cpp)
+  interp/interpreter.cpp
+  driver/compile.cpp
+  driver/testfile.cpp
+  driver/run.cpp)
 target_include_directories(minihls_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_executable(minihls main.cpp)

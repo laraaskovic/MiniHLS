@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <string>
 
 namespace minihls {
 
@@ -36,6 +37,9 @@ Bits bitOr(Bits a, Bits b);
 Bits bitXor(Bits a, Bits b);
 Bits neg(Bits a);
 Bits bitNot(Bits a);
+
+// Decimal rendering, honouring `isSigned`. Works for the full 128-bit range.
+std::string toString(const Bits& b);
 
 enum class Cmp { Lt, Le, Gt, Ge, Eq, Ne };
 Bits compare(Bits a, Bits b, Cmp op);

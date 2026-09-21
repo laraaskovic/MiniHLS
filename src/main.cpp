@@ -1,44 +1,45 @@
+#include "driver/compile.hpp"
+#include "version.hpp"
 #include <cstring>
 #include <iostream>
-#include "frontend/lexer.hpp"
-#include "version.hpp"
+
+namespace minihls {
+int runTests(const std::string& path);
+int runProgram(const std::string& path, const std::vector<std::string>& args);
 #ifdef MINIHLS_WITH_MLIR
-#include "dump.hpp"
+int dumpMlirFile(const std::string& path);
 #endif
+}
+
+static int usage() {
+  std::cerr <<
+    "usage: minihls --version\n"
+    "       minihls check <file.hc>          parse and check, report diagnostics\n"
+    "       minihls run   <file.hc> [args]   check, then execute\n"
+    "       minihls test  <file.hc>          run the matching .tests file\n";
+  return 1;
+}
 
 int main(int argc, char** argv) {
-  if (argc == 2 && std::strcmp(argv[1], "--version") == 0) {
-    std::cout << "minihls " << minihls::version() << "\n";
-    return 0;
+  if (argc < 2) return usage();
+  std::string cmd = argv[1];
+
+  if (cmd == "--version") { std::cout << "minihls " << minihls::version() << "\n"; return 0; }
+
+  if (cmd == "check" && argc == 3) {
+    auto c = minihls::compileFile(argv[2]);
+    if (!c.source) return 1;
+    c.diags->print(std::cerr);
+    if (c.ok) std::cout << argv[2] << ": ok\n";
+    return c.ok ? 0 : 1;
   }
-  if (argc == 3 && std::strcmp(argv[1], "lex") == 0) {
-    auto source = minihls::SourceFile::load(argv[2]);
-    if (!source) {
-      std::cerr << "could not read " << argv[2] << "\n";
-      return 1;
-    }
-    minihls::Diagnostics diagnostics(*source);
-    auto tokens = minihls::Lexer(*source, diagnostics).tokenize();
-    for (const auto& token : tokens) {
-      unsigned line = source->line(token.range.begin);
-      unsigned column = source->column(token.range.begin);
-      std::cout << line << ':' << column << "  "
-                << minihls::tokName(token.kind) << "  [" << token.text << "]\n";
-    }
-    if (diagnostics.hasErrors()) {
-      diagnostics.print(std::cerr);
-      return 1;
-    }
-    return 0;
+
+  if (cmd == "test" && argc == 3) return minihls::runTests(argv[2]);
+
+  if (cmd == "run" && argc >= 3) {
+    std::vector<std::string> args(argv + 3, argv + argc);
+    return minihls::runProgram(argv[2], args);
   }
-#ifdef MINIHLS_WITH_MLIR
-  if (argc == 3 && std::strcmp(argv[1], "dump") == 0)
-    return minihls::dumpMlirFile(argv[2]);
-#endif
-  std::cerr << "usage: minihls --version\n";
-  std::cerr << "       minihls lex <file.hc>\n";
-#ifdef MINIHLS_WITH_MLIR
-  std::cerr << "       minihls dump <file.mlir>\n";
-#endif
-  return 1;
+
+  return usage();
 }

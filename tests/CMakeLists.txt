@@ -13,3 +13,9 @@ target_compile_definitions(minihls_tests PRIVATE
 
 include(GoogleTest)
 gtest_discover_tests(minihls_tests)
+# The examples, end to end: front end, interpreter, and the hand-computed
+# vectors in each examples/<name>.tests.
+foreach(example max3 abs_diff popcount dot fir stream_sum)
+  add_test(NAME example.${example}
+           COMMAND minihls test ${CMAKE_SOURCE_DIR}/examples/${example}.hc)
+endforeach()

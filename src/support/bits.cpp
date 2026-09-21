@@ -1,4 +1,5 @@
 #include "support/bits.hpp"
+#include <algorithm>
 
 namespace minihls {
 
@@ -190,6 +191,31 @@ Bits compare(Bits a, Bits b, Cmp op) {
 
     // return size width 1, unsigned
     return Bits::make(result, 1, false);
+}
+
+// printing
+
+// std::to_string has no 128-bit overload, and value() misreads an unsigned
+// 128-bit number with its top bit set — so build the digits by hand.
+std::string toString(const Bits& b) {
+  bool negative = false;
+  u128 magnitude;
+  if (b.isSigned) {
+    i128 v = b.value();
+    negative = v < 0;
+    // Careful with the most negative value: -v would overflow.
+    magnitude = negative ? (~static_cast<u128>(v)) + 1 : static_cast<u128>(v);
+  } else {
+    magnitude = b.raw;                      // never negative, never via value()
+  }
+  std::string digits;
+  if (magnitude == 0) digits = "0";
+  while (magnitude > 0) {
+    digits += static_cast<char>('0' + static_cast<int>(magnitude % 10));
+    magnitude /= 10;
+  }
+  std::reverse(digits.begin(), digits.end());
+  return negative ? "-" + digits : digits;
 }
 
 } // namespace minihls
