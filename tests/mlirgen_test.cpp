@@ -203,10 +203,28 @@ TEST(MLIRGen, LiteralArmsTakeTheirWidthFromTheContext) {
 // Each of these must produce a diagnostic and NO module. Emitting half a
 // function and letting the verifier find it is the failure mode to avoid.
 
-TEST(MLIRGen, ArithmeticIsRefusedUntilWidthExtensionExists) {
+// S3 replaced the refusal: the operands now extend to the result width. The
+// width table itself is covered case by case in tests/mlirgen/*.hc.
+TEST(MLIRGen, ArithmeticExtendsItsOperandsToTheResultWidth) {
   auto emitted = emit("i17 add(i16 a, i16 b) { return a + b; }\n");
-  EXPECT_FALSE(emitted.ok);
-  EXPECT_NE(emitted.firstError.find("E4.S3"), std::string::npos) << emitted.firstError;
+  ASSERT_TRUE(emitted.ok) << emitted.firstError;
+  EXPECT_NE(emitted.ir.find("arith.extsi %arg0 : i16 to i17"), std::string::npos);
+  EXPECT_NE(emitted.ir.find("arith.addi"), std::string::npos);
+  EXPECT_EQ(emitted.ir.find("i16 to i16"), std::string::npos);   // no null cast
+}
+
+// The guard protects the divisor, not the result. If a zero reaches
+// arith.divsi the operation is undefined, and an optimiser is then entitled
+// to delete the correction that follows it.
+TEST(MLIRGen, DivisionGuardsTheDivisorRatherThanTheResult) {
+  auto emitted = emit("i17 dvs(i16 a, i16 b) { return a / b; }\n");
+  ASSERT_TRUE(emitted.ok) << emitted.firstError;
+  const size_t guard = emitted.ir.find("arith.cmpi eq");
+  const size_t div = emitted.ir.find("arith.divsi");
+  ASSERT_NE(guard, std::string::npos);
+  ASSERT_NE(div, std::string::npos);
+  EXPECT_LT(guard, div) << "the zero test must come before the division";
+  EXPECT_NE(emitted.ir.find("arith.select"), std::string::npos);
 }
 
 TEST(MLIRGen, ArrayParametersAreRefused) {
@@ -215,18 +233,70 @@ TEST(MLIRGen, ArrayParametersAreRefused) {
   EXPECT_NE(emitted.firstError.find("scalar"), std::string::npos) << emitted.firstError;
 }
 
-TEST(MLIRGen, ControlFlowStatementsAreRefused) {
-  auto forLoop = emit("i16 f(i16 a) {\n"
+// The induction variable's update is exempt from the width-growth rules
+// (LANGUAGE.md), so `i = i + 1` on a u4 is legal and this program really does
+// reach MLIRGen — which is the point. Asserting only `!ok` would also pass for
+// a program that never got past the type checker.
+TEST(MLIRGen, ForLoopsAreStillRefused) {
+  auto forLoop = emit("i16 f(i16 a, i16 b) {\n"
                       "  i16 m = a;\n"
-                      "  for (u4 i = 0; i < 4; i = i16(i + 1)) { m = a; }\n"
+                      "  for (u4 i = 0; i < 4; i = i + 1) { m = b; }\n"
                       "  return m;\n"
                       "}\n");
   EXPECT_FALSE(forLoop.ok);
+  EXPECT_NE(forLoop.firstError.find("E4.S6"), std::string::npos) << forLoop.firstError;
+}
 
-  auto ifStatement = emit("i16 f(i16 a, i16 b) {\n"
-                          "  i16 m = a;\n"
-                          "  if (a > b) { m = b; }\n"
-                          "  return m;\n"
-                          "}\n");
-  EXPECT_FALSE(ifStatement.ok);
+// An early exit cannot be one of the values an scf.if yields, so it is
+// refused rather than mis-emitted. Lifting this needs more than S5 has.
+TEST(MLIRGen, AReturnInsideAnIfIsRefused) {
+  auto emitted = emit("i16 f(u1 c, i16 a, i16 b) {\n"
+                      "  if (c) { return a; }\n"
+                      "  return b;\n"
+                      "}\n");
+  EXPECT_FALSE(emitted.ok);
+  EXPECT_NE(emitted.firstError.find("return"), std::string::npos) << emitted.firstError;
+}
+
+// ---- if/else becomes a value (E4.S5) ----
+
+// The merge point is where the two straight-line rules stop being enough:
+// after the `if`, "the value m holds" has two answers, and a DenseMap cannot
+// store both. scf.if results are MLIR's structured answer to phi nodes.
+TEST(MLIRGen, AnIfBecomesAnScfIfWithOneResultPerAssignedSymbol) {
+  auto emitted = emit("i16 f(u1 c, i16 a, i16 b) {\n"
+                      "  i16 m = a;\n"
+                      "  if (c) { m = b; } else { m = a; }\n"
+                      "  return m;\n"
+                      "}\n");
+  ASSERT_TRUE(emitted.ok) << emitted.firstError;
+  EXPECT_NE(emitted.ir.find("scf.if %arg0 -> (i16)"), std::string::npos);
+  EXPECT_NE(emitted.ir.find("scf.yield %arg2 : i16"), std::string::npos);
+  EXPECT_NE(emitted.ir.find("scf.yield %arg1 : i16"), std::string::npos);
+}
+
+// A symbol assigned in only one branch still needs a result; the branch that
+// leaves it alone yields the value it had before the `if`.
+TEST(MLIRGen, AOneSidedIfStillYieldsFromBothBranches) {
+  auto emitted = emit("i16 f(u1 c, i16 a, i16 b) {\n"
+                      "  i16 m = a;\n"
+                      "  if (c) { m = b; }\n"
+                      "  return m;\n"
+                      "}\n");
+  ASSERT_TRUE(emitted.ok) << emitted.firstError;
+  EXPECT_NE(emitted.ir.find("scf.if %arg0 -> (i16)"), std::string::npos);
+  EXPECT_NE(emitted.ir.find("scf.yield %arg2 : i16"), std::string::npos);
+  EXPECT_NE(emitted.ir.find("scf.yield %arg1 : i16"), std::string::npos);
+}
+
+// Nothing assigned in either branch means no results at all — an scf.if that
+// is pure control flow. `values_` is untouched across it.
+TEST(MLIRGen, AnIfThatAssignsNothingHasNoResults) {
+  auto emitted = emit("i16 f(u1 c, i16 a) {\n"
+                      "  if (c) { } else { }\n"
+                      "  return a;\n"
+                      "}\n");
+  ASSERT_TRUE(emitted.ok) << emitted.firstError;
+  EXPECT_NE(emitted.ir.find("scf.if"), std::string::npos);
+  EXPECT_EQ(emitted.ir.find("-> ("), std::string::npos);
 }

@@ -114,8 +114,16 @@ Type TypeChecker::infer(Expr& expr) {
       Type left = infer(*node.thenE), right = infer(*node.elseE);
       if (left.isPoly && !right.isPoly) checkExpr(*node.thenE, right), left = right;
       if (right.isPoly && !left.isPoly) checkExpr(*node.elseE, left), right = left;
-      if (!left.isPoly && !right.isPoly && (left.isSigned != right.isSigned || left.width != right.width))
-        report(expr.range, "conditional arms have different types");
+      if (!left.isPoly && !right.isPoly) {
+        // LANGUAGE.md's table: the arms must agree on SIGNEDNESS, but not on
+        // width — the result is the wider of the two and the narrower arm is
+        // extended, exactly like the operands of any other binary operator.
+        if (left.isSigned != right.isSigned)
+          report(expr.range, "conditional arms have different signedness: " +
+                             typeName(left) + " and " + typeName(right));
+        result = {std::max(left.width, right.width), left.isSigned};
+        break;
+      }
       result = left.isPoly ? right : left;
       break;
     }

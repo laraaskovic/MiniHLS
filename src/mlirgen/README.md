@@ -52,6 +52,8 @@ a thing called a "block", and they mean different things.
 | a source position | `Range` (byte offsets) | `mlir::Location` |
 | comparison | `Binary(Tok::Gt)` | `arith.cmpi sgt` |
 | `?:` | `Ternary` | `arith.select` |
+| a cast `T(a)` | `Cast` | `arith.extsi` / `extui` / `trunci` |
+| `if` / `else` | `If` | `scf.if` **with results** |
 | `return` | `Return` | `func.return` |
 
 Two rows deserve emphasis.
@@ -68,7 +70,7 @@ operands it is `arith.cmpi ugt`. Same two wires, different comparator.
 
 ---
 
-## The four tools
+## The tools
 
 The whole file is built out of these.
 
@@ -86,6 +88,11 @@ Signedness is dropped here. It asserts on a *poly* type, which is an untyped
 literal that sema failed to pin down; poly has the default width of 1, so
 emitting it would quietly produce an `i1` of the right value and the wrong
 width.
+
+**`coerce(at, v, fromSigned, toWidth)`** — the single place a width ever
+changes. Wider gets `extsi` or `extui`, chosen by the SOURCE's signedness;
+narrower gets `trunci`; the same width is a no-op. Every width rule in the
+language is a call to this.
 
 **`values_`** — a `DenseMap<const Symbol*, mlir::Value>`. It answers one
 question: *which SSA value currently holds this variable?* This map is the
@@ -222,9 +229,9 @@ Spelling never enters into it.
 
 **These two rules stop working the moment control flow merges.** If an `if`
 assigns `m` on one path and not the other, "the value currently held by `m`"
-has two answers, and a map cannot store both. That is what block arguments are
-for, and it is why `if` is deferred to S5 (`scf.if` results) and `for` to S6
-(`scf.for` with `iter_args`).
+has two answers, and a map cannot store both. That is what *if/else becomes a
+value* below is about, and why `for` still waits for S6 (`scf.for` with
+`iter_args`).
 
 ---
 
@@ -245,29 +252,122 @@ something: `IntLit`, `Binary`, `Ternary`, and `Return`.
 
 ---
 
-## What S2 refuses, and why
+## The width rules become casts (S3)
 
 `arith` requires **both operands of a binary operation to have the same type.**
-Our width rules say `i16 + i16` is `i17` and `i16 * i16` is `i32`, so the
-operands of every arithmetic operator need extending before the operation can
-be built. Emitting `arith.addi` on an `i16` and an `i16` to produce an `i17`
-is IR the verifier rejects.
+Our width rules say `i16 + i16` is `i17` and `i16 * i16` is `i32`. So every
+operation has the same shape:
 
-So S2 emits comparisons — where both operands already share a type and the
-result is `i1` — and refuses the rest with a diagnostic naming the story that
-will handle it:
+```text
+bring both operands to a common WORKING WIDTH
+build the machine operation there
+narrow the result to the width the type checker computed
+```
+
+The working width is usually the result width, and then the last step
+disappears. The rows where it is *not* are the interesting ones:
+
+| Operator class | Working width | Result width |
+|---|---|---|
+| `+` `-` `*` `&` `\|` `^` | the result width | `max(wa,wb)+1`, `wa+wb`, `max(wa,wb)` |
+| `/` `%` | `max(wa, wb, result)` | `wa+1`, `wa`, or `min(wa,wb)` |
+| `<` `<=` `>` `>=` `==` `!=` | `max(wa,wb)` | **1** |
+| `<<` `>>` | `wa`, amount guarded first | `wa` |
+
+**The comparison row is the trap.** Its result width is 1, so coercing the
+operands to the result width truncates them both to a single bit — and `max3`
+still passes every test, because its operands are already the same width.
+
+**The division row is the other one.** These are the only operators whose
+result can be *narrower* than an operand: `u8 / u16` is `u8`, and `a % b` is
+`min(wa,wb)`. Truncating the divisor to the result first would turn `u16(257)`
+into `u8(1)` and silently change the answer.
+
+Two more places the direction of an extension matters:
+
+- **Subtraction is always signed, but its operands are not.** `u8 - u8` is
+  `i9`, and each operand still extends by *its own* signedness — `extui`, not
+  `extsi`. That is what makes `u8(0) - u8(1)` into `i9(-1)` rather than `511`.
+- **A cast extends by the source's signedness**, never the destination's.
+  `i32(someU16)` zero-extends. This is `castTo()` in `bits.cpp`, one operation.
+
+## Defined behaviour (S4)
+
+LANGUAGE.md says every operation is defined for every input. `arith` disagrees:
+`x / 0` and a shift by at least the bit width are undefined there.
+
+The guard therefore protects the **input**, never the result:
+
+```mlir
+%z  = arith.cmpi eq, %d, %c0 : i32
+%sd = arith.select %z, %c1, %d : i32      // the divisor is now never zero
+%q  = arith.divsi %n, %sd : i32
+%r  = arith.select %z, %c0, %q : i32      // ...and the answer is corrected
+```
+
+Guarding only the result would be worse than useless. Once a zero divisor
+reaches `arith.divsi`, the operation is undefined, and an optimiser is
+entitled to conclude the path cannot happen and delete the correction with it.
+
+Shifts follow the same shape, with one shortcut. The out-of-range test runs on
+the **original** amount, before it is coerced to the operand's width — because
+truncating `u16(256)` to `i8` would turn an over-wide shift into a shift by
+zero. Then:
+
+| Case | Defined as | Emitted as |
+|---|---|---|
+| `a << b`, `b >= wa` | 0 | shift by 0, then select 0 |
+| `a >> b`, `a` unsigned | 0 | shift by 0, then select 0 |
+| `a >> b`, `a` signed | 0 or -1, the sign of `a` | clamp the amount to `wa-1` |
+
+The signed right shift needs no correcting select: `shrsi` by `wa-1` *is* the
+sign of the operand, replicated.
+
+## if/else becomes a value (S5)
+
+This is where the builder's cursor first moves inside a region, and where the
+two straight-line rules stop being enough.
+
+The key idea is the **modified set**: walk both branches and collect every
+`Symbol*` either of them assigns. That set becomes the `scf.if`'s results —
+one per symbol — each branch `scf.yield`s its version, and afterwards each
+symbol is rebound to the corresponding result.
+
+**That set is literally the phi nodes a textbook SSA algorithm would insert**
+at the merge point.
+
+```c
+i16 m = a;
+if (c) { m = b; }        // m assigned in ONE branch only
+return m;
+```
+
+```mlir
+%0 = scf.if %arg0 -> (i16) {
+  scf.yield %arg2 : i16        // the branch's version
+} else {
+  scf.yield %arg1 : i16        // the value m already had
+}
+```
+
+A symbol assigned in only one branch still needs a result. That falls out for
+free: each branch starts from the bindings in force before the `if`, so a
+branch that never touches `m` yields whatever `m` already meant. Nothing
+assigned by either branch means no results at all — an `scf.if` that is pure
+control flow.
+
+Still refused here: a `return` inside a branch. An early exit cannot be one of
+the values an `scf.if` yields, and pretending otherwise would emit IR that
+looks right and is not.
+
+## What is still refused
 
 | Construct | Refused until |
 |---|---|
-| `+ - * / % & \| ^ << >>` | S3 (`extsi` / `extui` / `trunci`) |
-| casts, unary operators | S3 |
-| `if` | S5 (`scf.if`) |
-| `for` | S6 (`scf.for`) |
+| `for` | S6 (`scf.for` with `iter_args`) |
 | arrays, indexing | S7 (`memref`) |
+| `return` inside an `if` | needs more than structured control flow gives |
 | streams | E6 (a custom dialect) |
-
-`max3` was chosen as this story's target precisely because it needs none of
-them: `a > b` compares two `i16`s, and both `?:` arms are already `i16`.
 
 ### The failure discipline
 
@@ -306,8 +406,9 @@ exactly what the `cse` pass removes, so this costs nothing once E5 exists.
 
 ```text
 mlirgen.hpp    emitModule() and emitMlirFile()
-mlirgen.cpp    the MLIRGen class: one emit() for expressions,
-               one emit() for statements, and the four tools
+mlirgen.cpp    the MLIRGen class: one emit() for expressions, one emit() for
+               statements, the tools above, and emitBinary / emitDivRem /
+               emitShift / emitIf for the rows that need their own rule
 ```
 
 `emitModule` takes an already-checked `Compilation` and returns a module, or
@@ -318,8 +419,7 @@ This code lives in the `minihls_mlir` library, not `minihls_core`, so a build
 configured with `-DMINIHLS_ENABLE_MLIR=OFF` still compiles the whole front end
 and interpreter. That is the configuration CI uses.
 
-Tests are in `tests/mlirgen_test.cpp`, which compiles source strings and
-compares the printed IR text.
+See *Tests* below for where the expectations live.
 
 ---
 
@@ -329,12 +429,22 @@ compares the printed IR text.
 |---|---|---|
 | **S1** | Read MLIR by hand — `docs/mlir-by-hand/` | done |
 | **S2** | Module, `func.func`, scalar params, constants, comparisons, `?:`, `return` | done |
-| **S3** | Width rules as explicit `extsi` / `extui` / `trunci` casts | next |
-| **S4** | Guards for defined behaviour — division by zero and over-wide shifts are undefined in `arith` but defined in our language | |
-| **S5** | `if` / `else` as `scf.if`, with results | |
-| **S6** | `for` as `scf.for` with `iter_args` | |
+| **S3** | Width rules as explicit `extsi` / `extui` / `trunci` casts | done |
+| **S4** | Guards for defined behaviour — division by zero and over-wide shifts are undefined in `arith` but defined in our language | done |
+| **S5** | `if` / `else` as `scf.if`, with results | done |
+| **S6** | `for` as `scf.for` with `iter_args` | next |
 | **S7** | Arrays as `memref`, constant arrays as globals | |
 | **S8** | Differential test: JIT the generated MLIR and compare against the AST interpreter | |
 
-S3 is the one this story was shaped to set up. Every operator that currently
-refuses becomes an extension followed by the operation.
+Two examples emit today: `max3` and `abs_diff`. The other four all need `for`
+or arrays, so S6 and S7 are what unlock them.
+
+## Tests
+
+```text
+tests/mlirgen_test.cpp   compiles source strings, asserts on the printed IR
+tests/mlirgen/*.hc       one FileCheck case per row of the width table, with
+                         the `// CHECK:` lines inside the input file
+tests/RunFileCheck.cmake runs emit-mlir and FileCheck as two steps, so a crash
+                         in the compiler cannot be hidden by a shell pipeline
+```

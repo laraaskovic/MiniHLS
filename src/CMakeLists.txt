@@ -16,9 +16,10 @@ add_library(minihls_core
   driver/testfile.cpp
   driver/run.cpp)
 target_include_directories(minihls_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(minihls_core PRIVATE minihls_warnings)
 
 add_executable(minihls main.cpp)
-target_link_libraries(minihls PRIVATE minihls_core)
+target_link_libraries(minihls PRIVATE minihls_core minihls_warnings)
 
 if(MINIHLS_ENABLE_MLIR)
   add_library(minihls_mlir dump.cpp mlirgen/mlirgen.cpp)
@@ -36,6 +37,7 @@ if(MINIHLS_ENABLE_MLIR)
     MLIRFuncDialect MLIRArithDialect MLIRSCFDialect MLIRMemRefDialect
     CIRCTHW CIRCTComb CIRCTSeq)
   target_compile_options(minihls_mlir PRIVATE -fno-rtti)
+  target_link_libraries(minihls_mlir PRIVATE minihls_warnings)
 
   target_link_libraries(minihls PRIVATE minihls_mlir)
   target_compile_definitions(minihls PRIVATE MINIHLS_WITH_MLIR)

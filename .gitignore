@@ -23,3 +23,6 @@ out/
 compile_commands.json
 build*/
 obj_dir/
+
+# ctest scratch, if ctest is ever run from the source tree
+Testing/
