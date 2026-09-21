@@ -6,6 +6,8 @@
 
 namespace minihls {
 
+struct Symbol;
+
 struct Type { unsigned width = 1; bool isSigned = false; };
 
 //expressions
@@ -27,12 +29,14 @@ struct IntLit : Expr {
 
 struct NameRef : Expr {
   std::string name;
+  Symbol* symbol = nullptr;
   NameRef(Range r, std::string n) : Expr(ExprKind::NameRef, r), name(std::move(n)) {}
 };
 
 struct Index : Expr {                       // a[i] — array name only, per the grammar
   std::string array;
   ExprPtr index;
+  Symbol* symbol = nullptr;
   Index(Range r, std::string a, ExprPtr i)
       : Expr(ExprKind::Index, r), array(std::move(a)), index(std::move(i)) {}
 };
@@ -90,6 +94,7 @@ struct VarDecl : Stmt {                     // i32 acc = <expr | read(s)>;
   ExprPtr init;                             // null when initIsRead
   bool initIsRead = false;
   std::string readStream;                   // set when initIsRead
+  Symbol* symbol = nullptr;
   VarDecl(Range r) : Stmt(StmtKind::VarDecl, r) {}
 };
 
@@ -98,6 +103,7 @@ struct ArrayDecl : Stmt {                   // i16 buf[8] = { ... };
   std::string name;
   ExprPtr size;
   std::vector<ExprPtr> init;                // empty if uninitialised
+  Symbol* symbol = nullptr;
   ArrayDecl(Range r) : Stmt(StmtKind::ArrayDecl, r) {}
 };
 
@@ -107,12 +113,14 @@ struct Assign : Stmt {                      // x = e;  or  a[i] = e;
   ExprPtr value;                            // null when valueIsRead
   bool valueIsRead = false;
   std::string readStream;
+  Symbol* symbol = nullptr;
   Assign(Range r) : Stmt(StmtKind::Assign, r) {}
 };
 
 struct Write : Stmt {                       // write(r, e);
   std::string stream;
   ExprPtr value;
+  Symbol* symbol = nullptr;
   Write(Range r) : Stmt(StmtKind::Write, r) {}
 };
 
@@ -141,6 +149,7 @@ struct For : Stmt {                         // the rigid header from the grammar
   bool stepIsAdd = true;                    // `i = i + k` vs `i = i - k`
   ExprPtr step;                             // const_expr
   BlockPtr body;
+  Symbol* ivSymbol = nullptr;
   For(Range r) : Stmt(StmtKind::For, r) {}
 };
 

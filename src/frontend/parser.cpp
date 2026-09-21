@@ -226,8 +226,7 @@ StmtPtr Parser::parseDeclaration() {
   return node;
 }
 
-// TODO
-// Identifier [ '[' expression ']' ] '=' ( expression | read(s) ) ';'
+// // Identifier [ '[' expression ']' ] '=' ( expression | read(s) ) ';'
 // `read(s)` is legal ONLY as the whole right-hand side — never nested inside a
 // larger expression. That restriction is what keeps expressions pure, so check
 // for Tok::KwRead here rather than in parsePrimary().
@@ -252,7 +251,7 @@ StmtPtr Parser::parseAssign() {
   return node;
 }
 
-// TODO  write '(' identifier ',' expression ')' ';'
+//  write '(' identifier ',' expression ')' ';'
 StmtPtr Parser::parseWrite() {
   Token start = expect(Tok::KwWrite, "write");
   auto node = std::make_unique<Write>(start.range);
@@ -267,8 +266,7 @@ StmtPtr Parser::parseWrite() {
   return node;
 }
 
-// TODO
-// 'if' '(' expression ')' block [ 'else' ( block | if_stmt ) ]
+// // 'if' '(' expression ')' block [ 'else' ( block | if_stmt ) ]
 // Braces are mandatory on both arms, so `else` is followed by either '{' or
 // another 'if' — recurse for `else if` chains. No dangling-else case exists.
 StmtPtr Parser::parseIf() {
@@ -333,7 +331,7 @@ StmtPtr Parser::parseFor() {
   return node;
 }
 
-// TODO  'return' expression ';'
+//  'return' expression ';'
 StmtPtr Parser::parseReturn() {
   Token start = expect(Tok::KwReturn, "return");
   auto node = std::make_unique<Return>(start.range);
@@ -344,8 +342,7 @@ StmtPtr Parser::parseReturn() {
 
 //==== program====
 
-// TODO
-// Split the pragma token's text: "#pragma unroll", "#pragma unroll factor=N",
+// // Split the pragma token's text: "#pragma unroll", "#pragma unroll factor=N",
 // "#pragma pipeline II=N". An unrecognised pragma is an ERROR, not a warning.
 Pragma Parser::parsePragma(Token t) {
   Pragma result;
@@ -391,14 +388,13 @@ Pragma Parser::parsePragma(Token t) {
   return result;
 }
 
-// TODO  the Type token already carries width and isSigned.
+//  the Type token already carries width and isSigned.
 Type Parser::parseType(const char* what) {
   Token token = expect(Tok::Type, what);
   return Type{token.width, token.isSigned};
 }
 
-// TODO
-//   Type Identifier                                  -> Scalar
+// //   Type Identifier                                  -> Scalar
 //   Type Identifier '[' const_expr ']'               -> Array
 //   ('in'|'out') 'stream' '<' Type '>' Identifier    -> StreamIn / StreamOut
 Param Parser::parseParam() {
@@ -431,8 +427,7 @@ Param Parser::parseParam() {
   return param;
 }
 
-// TODO
-//   'const' Type Identifier '=' expression ';'
+// //   'const' Type Identifier '=' expression ';'
 //   'const' Type Identifier '[' const_expr ']' '=' array_init ';'
 ConstDecl Parser::parseConstDecl() {
   Token start = expect(Tok::KwConst, "const");
@@ -464,7 +459,7 @@ ConstDecl Parser::parseConstDecl() {
   return result;
 }
 
-// TODO  Type Identifier '(' [param {',' param}] ')' block
+//  Type Identifier '(' [param {',' param}] ')' block
 Function Parser::parseFunction() {
   Function result;
   Token type = peek();
@@ -484,8 +479,7 @@ Function Parser::parseFunction() {
   return result;
 }
 
-// TODO
-// program = { const_decl } function { const_decl }
+// // program = { const_decl } function { const_decl }
 // EXACTLY ONE function. Zero or two is an error naming both locations.
 // Consts may appear after the function, so collect them all, then hand the
 // whole Program to sema — name resolution needs two passes over the file.
