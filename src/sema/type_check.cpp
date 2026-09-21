@@ -71,7 +71,7 @@ Type TypeChecker::infer(Expr& expr) {
     }
     case ExprKind::Index: {
       auto& node = static_cast<Index&>(expr);
-      if (node.index) infer(*node.index);
+      if (node.index) checkExpr(*node.index, Type{128, false});
       if (node.symbol) result = node.symbol->type;
       break;
     }
@@ -101,7 +101,8 @@ Type TypeChecker::infer(Expr& expr) {
       } else {
         if (left.isPoly) { checkExpr(*node.lhs, right); left = right; }
         if (right.isPoly) { checkExpr(*node.rhs, left); right = left; }
-        if (left.isSigned != right.isSigned)
+          bool shift = node.op == Tok::Shl || node.op == Tok::Shr;
+          if (left.isSigned != right.isSigned && !shift)
           report(expr.range, "mixed signedness: operands are " + typeName(left) + " and " + typeName(right));
         result = widthRule(node.op, left, right, expr.range);
       }

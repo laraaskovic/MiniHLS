@@ -160,7 +160,11 @@ void ConstantEvaluator::evaluateConst(ConstDecl& decl) {
     auto value = eval(*decl.init);
     if (value) { decl.value = *value; decl.valueKnown = true; }
   }
-  for (auto& value : decl.arrayInit) validateIndex(*value);
+  for (auto& value : decl.arrayInit) {
+    validateIndex(*value);
+    auto folded = eval(*value);
+    if (folded) decl.foldedElements.push_back(*folded);
+  }
 }
 
 void ConstantEvaluator::evaluateFor(For& loop) {

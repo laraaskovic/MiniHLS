@@ -191,6 +191,7 @@ struct ConstDecl {
   Symbol* symbol = nullptr;
   bool valueKnown = false;
   Bits value;
+  std::vector<Bits> foldedElements;
   Range range;
 };
 

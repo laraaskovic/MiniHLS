@@ -10,7 +10,8 @@ add_library(minihls_core
   frontend/ast_printer.cpp
   sema/resolver.cpp
   sema/type_check.cpp
-  sema/const_eval.cpp)
+  sema/const_eval.cpp
+  interp/interpreter.cpp)
 target_include_directories(minihls_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_executable(minihls main.cpp)
