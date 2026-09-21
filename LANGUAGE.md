@@ -269,6 +269,10 @@ A declaration introduces a name for the remainder of the enclosing block.
 Declaring a name that is already visible in the same block is an error;
 shadowing a name from an enclosing block is allowed.
 
+The induction variable declared by a `for` loop is visible in the loop header
+and body. A declaration with the same name inside the loop body is rejected;
+loop variables cannot be shadowed.
+
 `const` may be applied to a file-scope declaration to make it a compile-time
 constant usable in constant expressions. Local `const` is not supported.
 

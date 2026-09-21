@@ -89,10 +89,10 @@ void Resolver::resolveParam(const Param& param) {
 
 void Resolver::resolveFunction(Function& function) {
   // Parameters and locals belong to the function scope.
-  scopes_.push();
-  for (const Param& param : function.params) resolveParam(param);
   for (const Param& param : function.params)
     if (param.size) resolveExpr(*param.size);
+  scopes_.push();
+  for (const Param& param : function.params) resolveParam(param);
   if (function.body) resolveBlock(*function.body, false);
   scopes_.pop();
 }
@@ -155,7 +155,8 @@ void Resolver::resolveStmt(Stmt& stmt) {
       auto& node = static_cast<VarDecl&>(stmt);
       // Resolve the initializer before adding the new local to the scope.
       if (node.init) resolveExpr(*node.init);
-      if (node.initIsRead) lookupStream(node.readStream, node.range, false);
+      if (node.initIsRead)
+        node.readSymbol = lookupStream(node.readStream, node.range, false);
       node.symbol = declare(SymbolKind::Local, node.name, node.type, node.range);
       return;
     }
@@ -182,10 +183,14 @@ void Resolver::resolveStmt(Stmt& stmt) {
                             node.symbol->kind == SymbolKind::ArrayParam ||
                             node.symbol->kind == SymbolKind::GlobalConstArray))
           report(node.range, "cannot assign to array '" + node.name + "' without an index");
+        if (node.index && node.symbol->kind != SymbolKind::LocalArray &&
+            node.symbol->kind != SymbolKind::ArrayParam)
+          report(node.range, "'" + node.name + "' is not an array");
       }
       if (node.index) resolveExpr(*node.index);
       if (node.value) resolveExpr(*node.value);
-      if (node.valueIsRead) lookupStream(node.readStream, node.range, false);
+      if (node.valueIsRead)
+        node.readSymbol = lookupStream(node.readStream, node.range, false);
       return;
     }
     case StmtKind::Write: {

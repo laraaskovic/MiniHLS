@@ -8,7 +8,12 @@ namespace minihls {
 
 struct Symbol;
 
-struct Type { unsigned width = 1; bool isSigned = false; };
+struct Type {
+  unsigned width = 1;
+  bool isSigned = false;
+  bool isPoly = false;
+  u128 constValue = 0;
+};
 
 //expressions
 enum class ExprKind { IntLit, NameRef, Index, Cast, Unary, Binary, Ternary };
@@ -16,6 +21,8 @@ enum class ExprKind { IntLit, NameRef, Index, Cast, Unary, Binary, Ternary };
 struct Expr {
   ExprKind kind;
   Range range;
+  Type type;
+  bool typeKnown = false;
   virtual ~Expr() = default;
 protected:
   Expr(ExprKind k, Range r) : kind(k), range(r) {}
@@ -94,6 +101,7 @@ struct VarDecl : Stmt {                     // i32 acc = <expr | read(s)>;
   ExprPtr init;                             // null when initIsRead
   bool initIsRead = false;
   std::string readStream;                   // set when initIsRead
+  Symbol* readSymbol = nullptr;
   Symbol* symbol = nullptr;
   VarDecl(Range r) : Stmt(StmtKind::VarDecl, r) {}
 };
@@ -113,6 +121,7 @@ struct Assign : Stmt {                      // x = e;  or  a[i] = e;
   ExprPtr value;                            // null when valueIsRead
   bool valueIsRead = false;
   std::string readStream;
+  Symbol* readSymbol = nullptr;
   Symbol* symbol = nullptr;
   Assign(Range r) : Stmt(StmtKind::Assign, r) {}
 };

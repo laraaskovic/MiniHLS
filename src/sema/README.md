@@ -35,7 +35,8 @@ knows what declarations and values mean.
 | **S4** | Interpreter: programs actually execute | ~400 lines |
 | **S5** | `minihls run` and the test harness | ~100 lines |
 
-This file will grow as each story is implemented.
+This file will grow as each story is implemented. S1 is complete, and S2 now
+has its initial type-checking pass and focused tests.
 
 ## S1: Name Resolution
 
@@ -183,7 +184,7 @@ Those require later semantic information and belong to S2 and S3.
 
 ## S2: Type Checking
 
-S2 will add type annotations to expressions. The intended AST shape is:
+S2 adds type annotations to expressions. The AST shape is:
 
 ```cpp
 struct Expr {

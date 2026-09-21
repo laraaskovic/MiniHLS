@@ -5,7 +5,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(googletest)
 
-add_executable(minihls_tests version_test.cpp bits_test.cpp lexer_test.cpp parser_test.cpp resolver_test.cpp)
+add_executable(minihls_tests version_test.cpp bits_test.cpp lexer_test.cpp parser_test.cpp resolver_test.cpp type_check_test.cpp)
 target_link_libraries(minihls_tests PRIVATE minihls_core GTest::gtest_main)
 target_compile_definitions(minihls_tests PRIVATE
   MINIHLS_SOURCE_DIR="${CMAKE_SOURCE_DIR}"

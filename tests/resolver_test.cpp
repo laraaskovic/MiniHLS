@@ -86,9 +86,16 @@ TEST(Resolver, AllowsNestedShadowing) {
 
 TEST(Resolver, RejectsInvalidAssignmentTargets) {
   EXPECT_TRUE(resolveHasError("i16 f(i16 a[2]) { a[0] = 1; return 0; }"));
+  EXPECT_TRUE(resolveHasError("i16 f() { i16 x = 0; x[0] = 1; return x; }"));
   EXPECT_TRUE(resolveHasError("i16 f() { i16 a[2]; a = 1; return 0; }"));
   EXPECT_TRUE(resolveHasError("i16 f() { for (u4 i = 0; i < 2; i = i + 1) { i = 1; } return 0; }"));
   EXPECT_TRUE(resolveHasError("i16 f() { K = 1; return 0; } const i16 K = 0;"));
+}
+
+TEST(Resolver, ParameterArraySizesUseTheGlobalScope) {
+  EXPECT_FALSE(resolveHasError(
+      "i16 f(i16 values[N], u4 N) { return values[0]; }"
+      "const u4 N = 8;"));
 }
 
 TEST(Resolver, ChecksStreamDirections) {
