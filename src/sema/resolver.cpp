@@ -5,8 +5,8 @@ namespace minihls {
 Symbol* Resolver::newSymbol(SymbolKind kind, std::string name, Type type,
                             Range range) {
   // Keep symbols in stable storage because AST nodes store their addresses.
-  symbols_.push_back(Symbol{kind, std::move(name), type, range});
-  return &symbols_.back();
+  symbols_->push_back(Symbol{kind, std::move(name), type, range});
+  return &symbols_->back();
 }
 
 void Resolver::report(Range range, const std::string& message) {
@@ -56,11 +56,12 @@ Symbol* Resolver::lookupStream(const std::string& name, Range useRange,
 
 void Resolver::resolve(Program& program) {
   // Declare globals first so constants may appear after the function.
+  program.symbolStorage = symbols_;
   scopes_.push();
   for (ConstDecl& decl : program.consts) {
     SymbolKind kind = decl.isArray ? SymbolKind::GlobalConstArray
                                    : SymbolKind::GlobalConst;
-    declare(kind, decl.name, decl.type, decl.range);
+    decl.symbol = declare(kind, decl.name, decl.type, decl.range);
   }
   for (ConstDecl& decl : program.consts) resolveConst(decl);
   // Resolve the function after every global name is available.
@@ -75,7 +76,7 @@ void Resolver::resolveConst(ConstDecl& decl) {
   for (auto& value : decl.arrayInit) resolveExpr(*value);
 }
 
-void Resolver::resolveParam(const Param& param) {
+void Resolver::resolveParam(Param& param) {
   // Convert the parameter syntax into the matching symbol category.
   SymbolKind kind = SymbolKind::ScalarParam;
   bool streamOut = false;
@@ -84,7 +85,7 @@ void Resolver::resolveParam(const Param& param) {
     kind = SymbolKind::StreamParam;
     streamOut = param.kind == ParamKind::StreamOut;
   }
-  declare(kind, param.name, param.type, param.range, streamOut);
+  param.symbol = declare(kind, param.name, param.type, param.range, streamOut);
 }
 
 void Resolver::resolveFunction(Function& function) {
@@ -92,7 +93,7 @@ void Resolver::resolveFunction(Function& function) {
   for (const Param& param : function.params)
     if (param.size) resolveExpr(*param.size);
   scopes_.push();
-  for (const Param& param : function.params) resolveParam(param);
+  for (Param& param : function.params) resolveParam(param);
   if (function.body) resolveBlock(*function.body, false);
   scopes_.pop();
 }

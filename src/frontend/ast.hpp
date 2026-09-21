@@ -159,6 +159,8 @@ struct For : Stmt {                         // the rigid header from the grammar
   ExprPtr step;                             // const_expr
   BlockPtr body;
   Symbol* ivSymbol = nullptr;
+  uint64_t tripCount = 0;
+  bool tripCountKnown = false;
   For(Range r) : Stmt(StmtKind::For, r) {}
 };
 
@@ -175,6 +177,7 @@ struct Param {
   Type type;                                // element type for arrays/streams
   std::string name;
   ExprPtr size;                             // arrays only
+  Symbol* symbol = nullptr;
   Range range;
 };
 
@@ -185,6 +188,9 @@ struct ConstDecl {
   ExprPtr size;                             // arrays only
   ExprPtr init;                             // scalars only
   std::vector<ExprPtr> arrayInit;           // arrays only
+  Symbol* symbol = nullptr;
+  bool valueKnown = false;
+  Bits value;
   Range range;
 };
 
@@ -199,6 +205,7 @@ struct Function {
 struct Program {
   std::vector<ConstDecl> consts;
   Function fn;
+  std::shared_ptr<void> symbolStorage;
 };
 
 } // namespace minihls

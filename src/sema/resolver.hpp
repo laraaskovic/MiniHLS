@@ -22,7 +22,7 @@ private:
 
   void resolveConst(ConstDecl& decl);
   void resolveFunction(Function& function);
-  void resolveParam(const Param& param);
+  void resolveParam(Param& param);
   void resolveBlock(Block& block, bool createScope = true);
   void resolveStmt(Stmt& stmt);
   void resolveExpr(Expr& expr);
@@ -30,7 +30,8 @@ private:
   Symbol* lookupStream(const std::string& name, Range useRange,
                        bool writing);
 
-  std::deque<Symbol> symbols_;
+  std::shared_ptr<std::deque<Symbol>> symbols_ =
+      std::make_shared<std::deque<Symbol>>();
   ScopeStack scopes_;
   Diagnostics& diags_;
 };

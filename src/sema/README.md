@@ -35,8 +35,8 @@ knows what declarations and values mean.
 | **S4** | Interpreter: programs actually execute | ~400 lines |
 | **S5** | `minihls run` and the test harness | ~100 lines |
 
-This file will grow as each story is implemented. S1 is complete, and S2 now
-has its initial type-checking pass and focused tests.
+This file will grow as each story is implemented. S1 and S2 are complete, and
+S3 now has constant folding, array validation, and loop trip-count analysis.
 
 ## S1: Name Resolution
 
@@ -230,7 +230,8 @@ S2 should report errors such as:
 
 ## S3: Constant Evaluation and Trip Counts
 
-S3 evaluates expressions that must be known at compile time:
+S3 evaluates expressions that must be known at compile time and stores the
+exact trip count on each resolved loop:
 
 ```c
 const i16 N = 8;
@@ -264,6 +265,16 @@ S3 should reject things such as:
 - A zero loop step
 - A loop whose trip count cannot be determined
 - Values that do not fit the required type or range
+
+The implementation uses `Bits` for folding, so compile-time arithmetic follows
+the same width, signedness, division, remainder, and shift rules as runtime
+values. Constant definitions are tracked with an in-progress set so cycles
+such as `const i16 a = b; const i16 b = a;` produce an error instead of
+recursing forever.
+
+Resolved symbol storage is owned by the `Program` after resolution. This keeps
+the `Symbol*` links in the AST valid when the short-lived `Resolver` object
+returns.
 
 ## S4: Interpreter
 
