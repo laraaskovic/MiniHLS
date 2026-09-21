@@ -1,1 +1,0 @@
-/usr/bin/c++ -fsanitize=address -fno-omit-frame-pointer -fsanitize=address CMakeFiles/minihls_tests.dir/version_test.cpp.o CMakeFiles/minihls_tests.dir/bits_test.cpp.o CMakeFiles/minihls_tests.dir/lexer_test.cpp.o CMakeFiles/minihls_tests.dir/parser_test.cpp.o -o minihls_tests  ../src/libminihls_core.a ../lib/libgtest_main.a ../lib/libgtest.a 

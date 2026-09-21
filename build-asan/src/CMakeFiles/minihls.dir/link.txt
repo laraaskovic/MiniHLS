@@ -1,1 +1,0 @@
-/usr/bin/c++ -fsanitize=address -fno-omit-frame-pointer -fsanitize=address CMakeFiles/minihls.dir/main.cpp.o -o minihls  libminihls_core.a 
