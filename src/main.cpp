@@ -9,6 +9,8 @@ int runProgram(const std::string& path, const std::vector<std::string>& args);
 #ifdef MINIHLS_WITH_MLIR
 int dumpMlirFile(const std::string& path);
 int emitMlirFile(const std::string& path);
+int emitHWFile(const std::string& path);
+int emitVerilogFile(const std::string& path);
 #endif
 }
 
@@ -20,6 +22,8 @@ static int usage() {
     "       minihls test  <file.hc>          run the matching .tests file\n"
 #ifdef MINIHLS_WITH_MLIR
     "       minihls emit-mlir <file.hc>      check, then print func/arith MLIR\n"
+    "       minihls emit-hw   <file.hc>      lower to hw/comb and print the MLIR\n"
+    "       minihls emit-verilog <file.hc>   lower to hw/comb and print SystemVerilog\n"
     "       minihls dump  <file.mlir>        parse and reprint an MLIR file\n"
 #endif
     ;
@@ -44,6 +48,8 @@ int main(int argc, char** argv) {
 
 #ifdef MINIHLS_WITH_MLIR
   if (cmd == "emit-mlir" && argc == 3) return minihls::emitMlirFile(argv[2]);
+  if (cmd == "emit-hw" && argc == 3) return minihls::emitHWFile(argv[2]);
+  if (cmd == "emit-verilog" && argc == 3) return minihls::emitVerilogFile(argv[2]);
   if (cmd == "dump"      && argc == 3) return minihls::dumpMlirFile(argv[2]);
 #endif
 

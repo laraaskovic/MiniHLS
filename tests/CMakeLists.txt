@@ -62,3 +62,26 @@ if(MINIHLS_ENABLE_MLIR)
     message(STATUS "minihls: FileCheck not found, skipping the mlirgen.* tests")
   endif()
 endif()
+
+# E8 rung one, end to end: the combinational examples must lower to hw/comb and
+# then through ExportVerilog into SystemVerilog that Verilator accepts. Only
+# max3 and abs_diff are combinational; everything with a loop or an array needs
+# a cycle count, so it needs E7 and E8's FSM.
+if(MINIHLS_ENABLE_MLIR)
+  find_program(VERILATOR_EXE NAMES verilator)
+  foreach(example max3 abs_diff)
+    add_test(NAME hw.${example}
+             COMMAND minihls emit-hw ${CMAKE_SOURCE_DIR}/examples/${example}.hc)
+    if(VERILATOR_EXE)
+      add_test(NAME verilog.${example} COMMAND ${CMAKE_COMMAND}
+               -DMINIHLS=$<TARGET_FILE:minihls>
+               -DVERILATOR=${VERILATOR_EXE}
+               -DCASE=${CMAKE_SOURCE_DIR}/examples/${example}.hc
+               -DNAME=${example}
+               -P ${CMAKE_CURRENT_SOURCE_DIR}/RunVerilator.cmake)
+    endif()
+  endforeach()
+  if(NOT VERILATOR_EXE)
+    message(STATUS "minihls: verilator not found, skipping the verilog.* tests")
+  endif()
+endif()
