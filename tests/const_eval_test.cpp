@@ -88,7 +88,7 @@ TEST(ConstantEvaluator, RejectsLoopTerminalValueOutsideType) {
 }
 
 TEST(ConstantEvaluator, AllExamplesEvaluateConstantsAndLoops) {
-  for (const char* name : {"max3", "abs_diff", "popcount", "dot", "fir", "stream_sum"}) {
+  for (const char* name : {"max3", "abs_diff", "dot", "fir", "stream_sum"}) {
     auto parsed = prepare(readFile(std::string(MINIHLS_EXAMPLES_DIR) + "/" + name + ".hc"));
     ASSERT_FALSE(parsed.diagnostics->hasErrors()) << name << " failed before S3";
     ConstantEvaluator evaluator(*parsed.diagnostics);

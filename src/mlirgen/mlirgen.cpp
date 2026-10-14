@@ -10,6 +10,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <cassert>
+#include <limits>
 #include <iostream>
 
 namespace minihls {
@@ -55,8 +56,16 @@ private:
   // A poly type is an untyped literal that sema never pinned down. Its width
   // is the default 1, so emitting it would silently produce an i1 of the
   // right value and the wrong width — abort instead of guessing.
-  mlir::Type typeOf(Type t) {
-    assert(!t.isPoly && "MLIRGen reached an expression sema left untyped");
+  // `assert` is the wrong tool here: -DNDEBUG deletes it, and a Release build
+  // would then emit the silent i1 this comment warns about. An invariant whose
+  // violation produces WRONG HARDWARE gets a diagnostic; only one whose
+  // violation produces a crash can stay an assert.
+  mlir::Type typeOf(Type t, Range where) {
+    if (t.isPoly) {
+      fail(where, "internal: expression reached MLIRGen with no type; sema "
+                  "should have pinned it");
+      return {};
+    }
     return builder_.getIntegerType(t.width);
   }
 
@@ -95,8 +104,10 @@ private:
                                            builder_.getIntegerAttr(ty, bits));
   }
 
-  mlir::Value constant(mlir::Location at, u128 raw, Type t) {
-    assert(!t.isPoly && "MLIRGen reached a literal sema left untyped");
+  mlir::Value constant(mlir::Location at, Range where, u128 raw, Type t) {
+    if (t.isPoly)
+      return fail(where, "internal: literal reached MLIRGen with no type; sema "
+                         "should have pinned it");
     return intConst(at, raw, t.width);
   }
 
@@ -116,11 +127,15 @@ private:
                       "(arrays arrive in E4.S7, streams in E6)");
         return;
       }
-      argTypes.push_back(typeOf(p.type));
+      mlir::Type argType = typeOf(p.type, p.range);
+      if (!argType) return;
+      argTypes.push_back(argType);
     }
 
     returnType_ = fn.returnType;
-    auto type = builder_.getFunctionType(argTypes, typeOf(fn.returnType));
+    mlir::Type resultType = typeOf(fn.returnType, fn.range);
+    if (!resultType) return;
+    auto type = builder_.getFunctionType(argTypes, resultType);
     auto func = mlir::func::FuncOp::create(builder_, loc(fn.range), fn.name, type);
     auto* entry = func.addEntryBlock();
     builder_.setInsertionPointToStart(entry);
@@ -144,7 +159,7 @@ private:
 
     case ExprKind::IntLit:
       // Sema already decided this literal's type. Build a constant of it.
-      return constant(at, static_cast<IntLit&>(e).value, e.type);
+      return constant(at, e.range, static_cast<IntLit&>(e).value, e.type);
 
     case ExprKind::NameRef: {
       // Reading a variable is a map lookup. No load, no memory — the value
@@ -159,7 +174,8 @@ private:
       // dominate a later use outside it. Duplicates are exactly what `cse`
       // exists to remove, so this costs nothing after E5.
       if (auto it = constants_.find(n.symbol); it != constants_.end())
-        return constant(at, it->second->value.raw, it->second->type);
+        return constant(at, e.range, it->second->value.raw,
+                        it->second->type);
 
       return fail(e.range, "'" + n.name + "' has no value at this point");
     }
@@ -225,9 +241,12 @@ private:
       return mlir::arith::SelectOp::create(builder_, at, c, t, f);
     }
 
-    default:                               // ExprKind::Index
+    case ExprKind::Index:
       return fail(e.range, "indexing an array is E4.S7");
     }
+    // No `default:` above, so -Wswitch makes adding an ExprKind a compile
+    // error here rather than a silent omission.
+    return fail(e.range, "internal: unhandled expression kind");
   }
 
   // ---- binary operators (E4.S3) ----
@@ -257,10 +276,19 @@ private:
                                          predicate(n.op, lt.isSigned), a, b);
     }
 
-    // Both operands are already u1 and neither side short-circuits, so these
-    // are plain bitwise operations on one bit.
-    case Tok::AmpAmp:   return mlir::arith::AndIOp::create(builder_, at, l, r);
-    case Tok::PipePipe: return mlir::arith::OrIOp::create(builder_, at, l, r);
+    // Both operands are u1 and neither side short-circuits, so these are
+    // plain bitwise operations on one bit. The width check is not paranoia:
+    // if a wider pair ever got here the verifier would ACCEPT it, because the
+    // two operand types still match, and `u8 && u8` would silently become a
+    // bitwise AND of eight bits.
+    case Tok::AmpAmp: case Tok::PipePipe: {
+      if (lt.width != 1 || rt.width != 1)
+        return fail(n.range, "internal: `&&`/`||` operands are not u1; sema "
+                             "should have rejected this");
+      return n.op == Tok::AmpAmp
+                 ? mlir::Value(mlir::arith::AndIOp::create(builder_, at, l, r))
+                 : mlir::Value(mlir::arith::OrIOp::create(builder_, at, l, r));
+    }
 
     case Tok::Shl: case Tok::Shr:       return emitShift(n, at, l, r);
     case Tok::Slash: case Tok::Percent: return emitDivRem(n, at, l, r);
@@ -446,15 +474,20 @@ private:
       return;
     }
 
-    case StmtKind::If:    emitIf(static_cast<If&>(s)); return;
+    case StmtKind::If:    emitIf(static_cast<If&>(s));   return;
+    case StmtKind::For:   emitFor(static_cast<For&>(s));  return;
     case StmtKind::Block: emitBlock(static_cast<Block&>(s)); return;
 
-    // TODO: For (S6), ArrayDecl/Write (S7)
-    default:
-      fail(s.range, "this statement is not emitted yet (`for` is E4.S6, "
-                    "arrays and streams are E4.S7)");
+    case StmtKind::ArrayDecl:
+      fail(s.range, "declaring an array is E4.S7");
+      return;
+    case StmtKind::Write:
+      fail(s.range, "writing to a stream is E6");
       return;
     }
+    // No `default:` above, so -Wswitch makes adding a StmtKind a compile error
+    // here rather than a statement this stage silently drops.
+    fail(s.range, "internal: unhandled statement kind");
   }
 
   // ---- if/else (E4.S5) ----
@@ -482,8 +515,15 @@ private:
     case StmtKind::For:
       collectAssigned(*static_cast<For&>(s).body, out);
       return;
-    default:
-      return;
+
+    // The kinds that contribute nothing, each for its own reason. Spelling
+    // them out instead of writing `default:` means -Wswitch flags a new
+    // StmtKind here, which is the difference between a compile error and a
+    // carried value quietly going missing.
+    case StmtKind::VarDecl:   return;  // declares a NEW symbol: never live after
+    case StmtKind::ArrayDecl: return;  // arrays are memrefs — mutable state, not SSA
+    case StmtKind::Write:     return;  // a stream write is a side effect, not a value
+    case StmtKind::Return:    return;  // refused inside a region; see emitBranch
     }
   }
 
@@ -534,6 +574,145 @@ private:
     // Past the merge, each carried symbol names the matching result.
     for (size_t i = 0; i < carried.size(); ++i)
       values_[carried[i]] = ifOp.getResult(i);
+  }
+
+  // ---- for (E4.S6) ----
+
+  // A loop is `scf.if` again, with one more binding to keep straight. Four
+  // values per carried symbol, and they are the four terminals of a register:
+  //
+  //   iter_args(%acc = %init)   %init is the value entering the loop  -> reset
+  //   %acc, the region argument this iteration's input                -> Q
+  //   scf.yield %next           next iteration's value                -> D
+  //   forOp.getResult(i)        the value after the loop              -> Q final
+  //
+  // The body is emitted ONCE. The trip count is data on the op, not repetition
+  // in the IR — which is exactly what leaves E7 free to decide whether eight
+  // iterations become eight copies of the hardware or one copy over eight
+  // cycles.
+  void emitFor(For& n) {
+    const auto at = loc(n.range);
+
+    if (!n.tripCountKnown) {
+      fail(n.range, "this loop's trip count is not known at compile time");
+      return;
+    }
+    // scf.for's bounds are `index`, which is signed. A count this large is
+    // nonsense in hardware anyway, but a silent wrap to a negative bound would
+    // produce a loop that never runs.
+    if (n.tripCount > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+      fail(n.range, "this loop's trip count does not fit a signed index");
+      return;
+    }
+    // Zero iterations: emit nothing. Every symbol the body would have assigned
+    // keeps the value it already had, which is what returning early leaves in
+    // place, and it is what the interpreter does for the same header.
+    if (n.tripCount == 0) return;
+
+    // The symbols the body assigns become the loop-carried values. Same helper
+    // as emitIf — a loop body is just another region whose assignments have to
+    // flow out of it.
+    llvm::SetVector<const Symbol*> modified;
+    collectAssigned(*n.body, modified);
+    // The induction variable is bound by the header, not by an Assign, so it is
+    // never collected. Removing it anyway keeps that invariant stated locally
+    // rather than depending on collectAssigned's shape.
+    modified.remove(n.ivSymbol);
+
+    llvm::SmallVector<const Symbol*> carried;
+    llvm::SmallVector<mlir::Value> initArgs;
+    for (const Symbol* sym : modified) {
+      mlir::Value prior = values_.lookup(sym);
+      if (!prior) {
+        fail(n.range, "'" + sym->name + "' is assigned inside this loop but "
+                      "has no value before it");
+        return;
+      }
+      carried.push_back(sym);
+      initArgs.push_back(prior);
+    }
+
+    // The header's `init` and `step` are const_exprs, emitted HERE in the
+    // enclosing block rather than inside the region, so they dominate every
+    // use below and `canonicalize` folds them once instead of once per loop.
+    mlir::Value ivInit = emit(*n.init);
+    if (!ivInit) return;
+    ivInit = coerce(at, ivInit, n.init->type.isSigned, n.ivType.width);
+    mlir::Value ivStep = emit(*n.step);
+    if (!ivStep) return;
+    ivStep = coerce(at, ivStep, n.step->type.isSigned, n.ivType.width);
+
+    // Every header in the language is normalised to `0 .. tripCount step 1`.
+    // Four relational operators and two step directions would otherwise be
+    // eight lowerings with an off-by-one in each; instead the real induction
+    // variable is rebuilt from the counter below. E3 already proved the trip
+    // count, so nothing re-tests the loop condition — which is what lets E8
+    // build a counter rather than a comparator that runs every cycle.
+    auto idx = [&](int64_t v) -> mlir::Value {
+      return mlir::arith::ConstantIndexOp::create(builder_, at, v);
+    };
+    auto forOp = mlir::scf::ForOp::create(
+        builder_, at, idx(0), idx(static_cast<int64_t>(n.tripCount)), idx(1),
+        initArgs);
+
+    // Each pass through the body starts from the bindings in force before the
+    // loop, and the body's own locals are discarded afterwards — a VarDecl
+    // inside the body names a value defined INSIDE the region, which would not
+    // dominate a use after it.
+    const auto entry = values_;
+
+    {
+      mlir::OpBuilder::InsertionGuard guard(builder_);
+      mlir::Block* body = forOp.getBody();
+      // ForOp adds a terminator for itself when there are no iter_args and
+      // leaves the block bare when there are. Rather than depend on which case
+      // this is — it is a detail of the builder, and it has moved — drop
+      // whatever is there and build the yield unconditionally.
+      if (!body->empty()) body->back().erase();
+      builder_.setInsertionPointToStart(body);
+
+      // iv = init +/- k*step, all at ivType.width with no width growth. The
+      // induction update is exempt from the width rules because S3 proved every
+      // value it takes fits the declared type — the same reason the interpreter
+      // wraps it with Bits::make at ivType.width instead of widening.
+      mlir::Value k = mlir::arith::IndexCastOp::create(
+          builder_, at, builder_.getIntegerType(n.ivType.width),
+          forOp.getInductionVar());
+      mlir::Value delta = mlir::arith::MulIOp::create(builder_, at, k, ivStep);
+      values_[n.ivSymbol] =
+          n.stepIsAdd
+              ? mlir::Value(mlir::arith::AddIOp::create(builder_, at, ivInit, delta))
+              : mlir::Value(mlir::arith::SubIOp::create(builder_, at, ivInit, delta));
+
+      // Inside the body a carried symbol names the REGION ARGUMENT, not the
+      // value that entered the loop. Getting these two the wrong way round
+      // still verifies; it just computes the wrong answer, which is why E4.S8's
+      // differential test stops being optional at this story.
+      for (size_t i = 0; i < carried.size(); ++i)
+        values_[carried[i]] = forOp.getRegionIterArg(i);
+
+      emitBlock(*n.body);
+      if (failed_) return;
+      if (returned_) {
+        fail(n.range, "`return` inside a `for` is not emitted: an early exit "
+                      "cannot be one of the values an scf.for yields");
+        return;
+      }
+
+      llvm::SmallVector<mlir::Value> yielded;
+      for (const Symbol* sym : carried) {
+        mlir::Value v = values_.lookup(sym);
+        assert(v && "a carried symbol lost its binding inside the loop body");
+        yielded.push_back(v);
+      }
+      mlir::scf::YieldOp::create(builder_, at, yielded);
+    }
+
+    // Past the loop each carried symbol names the matching result, and the
+    // induction variable is out of scope again.
+    values_ = entry;
+    for (size_t i = 0; i < carried.size(); ++i)
+      values_[carried[i]] = forOp.getResult(i);
   }
 
   // Emit one branch into `block`, then terminate it by yielding the current

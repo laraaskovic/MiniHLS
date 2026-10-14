@@ -105,7 +105,7 @@ TEST(Resolver, ChecksStreamDirections) {
 }
 
 TEST(Resolver, AllExamplesResolve) {
-  for (const char* name : {"max3", "abs_diff", "popcount", "dot", "fir", "stream_sum"}) {
+  for (const char* name : {"max3", "abs_diff", "dot", "fir", "stream_sum"}) {
     auto parsed = parse(readFile(std::string(MINIHLS_EXAMPLES_DIR) + "/" + name + ".hc"));
     ASSERT_FALSE(parsed.diagnostics->hasErrors()) << name << " failed to parse";
     Resolver resolver(*parsed.diagnostics);

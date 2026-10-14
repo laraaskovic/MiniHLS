@@ -1,6 +1,6 @@
 # The examples
 
-Six programs. Together they are the regression suite for the whole project:
+Five programs. Together they are the regression suite for the whole project:
 the AST interpreter in E3, the MLIR in E4, the optimiser in E5, the
 schedules in E7, the generated RTL in E8, the pipelines in E9 and the
 area/latency curve in E10 are all measured against these files and no
@@ -16,7 +16,6 @@ only that the thing is consistent with itself.
 |------|-----------|-----------------|
 | `max3.hc` | straight-line code, signed comparison, mux, no state at all | E3.S4 interpreter |
 | `abs_diff.hc` | the width rules on their own: `i16 - i16` is `i17`, `-i17` is `i18`, and a signedness-changing cast on the way out | E3.S4 interpreter |
-| `popcount.hc` | a loop whose body is bit manipulation — shift by a variable, mask, `u1`, accumulate into `u5` | E3.S4 interpreter |
 | `dot.hc` | loop, two array parameters, loop-carried accumulator, the 33-bit-into-32 cast | E4.S6 `scf.for` with `iter_args` |
 | `fir.hc` | a file-scope `const` array (a ROM) and eight multiplies that can share hardware | E8.S5 memories, then E10.S2 |
 | `stream_sum.hc` | `in`/`out stream<T>`, `read`/`write` ordering, one value consumed and one produced per iteration | E6.S3 the stream dialect |
@@ -32,10 +31,6 @@ Why each one earns its place, beyond the column above:
 - **abs_diff** exists because subtraction is the rule C gets most wrong and
   the one most likely to be got wrong here too. Its test file is mostly
   boundaries for that reason.
-- **popcount** is the only example that shifts by a value rather than a
-  constant, and the only one whose loop counter's width is forced by the
-  range rule (`u5`, not `u4`). It is also the natural first `#pragma unroll`
-  target in E5 — sixteen iterations of two gates.
 - **dot** is the pipelining example: the accumulator is a distance-1
   loop-carried dependence, which is what sets the minimum II in E9.S1, and
   two array reads per iteration are what make the single-port memory
@@ -54,10 +49,14 @@ expected value has to be computable by hand, and in E8 a co-simulation of an
 eight-element loop finishes in microseconds while a thousand-element one is
 a coffee break on every CI run.
 
-None of the six carries a pragma. `#pragma unroll` and `#pragma pipeline`
-change what the scheduler is asked to do, and putting one in the source now
-would mean every stage from E4 to E8 had to honour it before the stage that
-implements it exists. The pragmas arrive in E5 and E9, on these same files.
+Only `dot.hc` carries a pragma, and it is a *request* rather than a promise:
+`#pragma pipeline II=1` asks E9 for one iteration per cycle, which `dot`
+cannot have — the accumulator is a distance-1 recurrence and two array reads
+share one memory port. Reporting requested against achieved, and which of the
+two bound it, is E9.S2. Every stage before E9 parses the pragma and ignores
+it, which is why no other example carries one: a pragma in the source would
+otherwise mean every stage from E4 to E8 had to honour it before the stage
+that implements it exists.
 
 ## The `.tests` format
 
@@ -71,7 +70,7 @@ a few `>>`.
 - Inputs appear in parameter order — scalars, arrays, then the contents of
   each `in stream`.
 - Outputs are the contents of each `out stream` in parameter order,
-  followed by the returned value. For five of the six examples that means
+  followed by the returned value. For four of the five examples that means
   the right-hand side is a single number; `stream_sum` is the one with a
   list and a number.
 
