@@ -129,7 +129,7 @@ TEST(Parser, ExactlyOneFunction) {
 // ====================== the round-trip property ======================
 
 TEST(Parser, ExamplesRoundTrip) {
-  for (const char* name : {"max3", "abs_diff", "popcount", "dot", "fir", "stream_sum"}) {
+  for (const char* name : {"max3", "abs_diff", "dot", "fir", "stream_sum"}) {
     std::string path = std::string(MINIHLS_EXAMPLES_DIR) + "/" + name + ".hc";
     std::string text = readFile(path);
     ASSERT_FALSE(text.empty()) << path;

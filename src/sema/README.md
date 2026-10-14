@@ -297,13 +297,12 @@ The important correctness rule is that the interpreter must follow the
 language specification, not ordinary C++ behavior. Generated MLIR and RTL will
 later be compared against its results.
 
-The six `.hc` examples and matching `.tests` files become the main behavioral
+The five `.hc` examples and matching `.tests` files become the main behavioral
 regression suite:
 
 ```text
 abs_diff
 max3
-popcount
 dot
 fir
 stream_sum

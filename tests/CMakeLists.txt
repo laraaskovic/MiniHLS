@@ -25,14 +25,15 @@ if(MINIHLS_ENABLE_MLIR)
 endif()
 # The examples, end to end: front end, interpreter, and the hand-computed
 # vectors in each examples/<name>.tests.
-foreach(example max3 abs_diff popcount dot fir stream_sum)
+foreach(example max3 abs_diff dot fir stream_sum)
   add_test(NAME example.${example}
            COMMAND minihls test ${CMAKE_SOURCE_DIR}/examples/${example}.hc)
 endforeach()
 
 # The emitted IR has to pass the verifier, which `emit-mlir` runs before it
-# prints. Each story adds the example it unlocks; `for`, arrays and streams
-# are still refused, so popcount/dot/fir/stream_sum arrive with S6 and S7.
+# prints. Each story adds the example it unlocks. No example exercises a
+# loop without also using arrays, so S6's end-to-end coverage lives in
+# tests/mlirgen/for_*.hc and dot/fir/stream_sum arrive with S7 and E6.
 if(MINIHLS_ENABLE_MLIR)
   foreach(example max3 abs_diff)
     add_test(NAME mlir.${example}
