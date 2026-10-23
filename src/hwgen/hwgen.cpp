@@ -15,6 +15,8 @@
 #include "circt/Dialect/Comb/CombOps.h"
 #include "circt/Dialect/HW/HWDialect.h"
 #include "circt/Dialect/HW/HWOps.h"
+#include "circt/Dialect/SV/SVDialect.h"
+#include "circt/Dialect/Seq/SeqDialect.h"
 
 #include <iostream>
 
@@ -399,7 +401,16 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToHW(mlir::MLIRContext& ctx,
                                             mlir::ModuleOp source,
                                             Diagnostics& diags,
                                             const SourceFile& src) {
-  ctx.loadDialect<circt::hw::HWDialect, circt::comb::CombDialect>();
+  // hw and comb are what this stage builds. sv and seq are what ExportVerilog
+  // builds: it does not print hw/comb directly but first lowers to the `sv`
+  // dialect -- sv.wire, sv.assign, the always blocks -- because that is where
+  // the Verilog-specific decisions live, such as whether a value becomes a
+  // wire, a logic declaration or an inline expression. A dialect an op belongs
+  // to has to be loaded before the op can be created, and ExportVerilog
+  // creates them inside our context, so we load them even though no line of
+  // this file names one.
+  ctx.loadDialect<circt::hw::HWDialect, circt::comb::CombDialect,
+                  circt::sv::SVDialect, circt::seq::SeqDialect>();
 
   mlir::OpBuilder builder(&ctx);
   mlir::OwningOpRef<mlir::ModuleOp> out =

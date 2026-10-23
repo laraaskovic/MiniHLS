@@ -67,7 +67,9 @@ TEST(MLIRGen, Max3MatchesTheHandWrittenModule) {
   ASSERT_TRUE(emitted.ok) << emitted.firstError;
   EXPECT_EQ(emitted.ir,
             "module {\n"
-            "  func.func @max3(%arg0: i16, %arg1: i16, %arg2: i16) -> i16 {\n"
+            "  func.func @max3(%arg0: i16 {minihls.name = \"a\"}, "
+            "%arg1: i16 {minihls.name = \"b\"}, "
+            "%arg2: i16 {minihls.name = \"c\"}) -> i16 {\n"
             "    %0 = arith.cmpi sgt, %arg0, %arg1 : i16\n"
             "    %1 = arith.select %0, %arg0, %arg1 : i16\n"
             "    %2 = arith.cmpi sgt, %1, %arg2 : i16\n"
@@ -237,14 +239,36 @@ TEST(MLIRGen, ArrayParametersAreRefused) {
 // (LANGUAGE.md), so `i = i + 1` on a u4 is legal and this program really does
 // reach MLIRGen — which is the point. Asserting only `!ok` would also pass for
 // a program that never got past the type checker.
-TEST(MLIRGen, ForLoopsAreStillRefused) {
+// A loop body's assignments become iter_args: the body is emitted ONCE and the
+// trip count is data on the op, which is what leaves E7 free to decide whether
+// four iterations become four copies of the hardware or one copy over four
+// cycles. The induction variable is NOT carried — it is bound by the header.
+TEST(MLIRGen, ForLoopsCarryTheirAssignmentsAsIterArgs) {
   auto forLoop = emit("i16 f(i16 a, i16 b) {\n"
                       "  i16 m = a;\n"
                       "  for (u4 i = 0; i < 4; i = i + 1) { m = b; }\n"
                       "  return m;\n"
                       "}\n");
-  EXPECT_FALSE(forLoop.ok);
-  EXPECT_NE(forLoop.firstError.find("E4.S6"), std::string::npos) << forLoop.firstError;
+  ASSERT_TRUE(forLoop.ok) << forLoop.firstError;
+  EXPECT_NE(forLoop.ir.find("scf.for"), std::string::npos) << forLoop.ir;
+  EXPECT_NE(forLoop.ir.find("iter_args"), std::string::npos) << forLoop.ir;
+  EXPECT_NE(forLoop.ir.find("scf.yield"), std::string::npos) << forLoop.ir;
+  // One result, for `m`. If the induction variable leaked into the carried set
+  // there would be two.
+  EXPECT_NE(forLoop.ir.find("-> (i16)"), std::string::npos) << forLoop.ir;
+}
+
+// Zero iterations emits no loop at all, and every symbol the body would have
+// assigned keeps the value it already had. That is what the interpreter does
+// for the same header, which matters because E4.S8 compares the two.
+TEST(MLIRGen, AZeroTripLoopEmitsNothing) {
+  auto emitted = emit("i16 f(i16 a, i16 b) {\n"
+                      "  i16 m = a;\n"
+                      "  for (u4 i = 0; i < 0; i = i + 1) { m = b; }\n"
+                      "  return m;\n"
+                      "}\n");
+  ASSERT_TRUE(emitted.ok) << emitted.firstError;
+  EXPECT_EQ(emitted.ir.find("scf.for"), std::string::npos) << emitted.ir;
 }
 
 // An early exit cannot be one of the values an scf.if yields, so it is

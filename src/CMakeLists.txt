@@ -35,7 +35,7 @@ if(MINIHLS_ENABLE_MLIR)
     minihls_core                      # the emitter walks the front end's AST
     MLIRIR MLIRParser
     MLIRFuncDialect MLIRArithDialect MLIRSCFDialect MLIRMemRefDialect
-    CIRCTHW CIRCTComb CIRCTSeq
+    CIRCTHW CIRCTComb CIRCTSeq CIRCTSV
     CIRCTExportVerilog)
   target_compile_options(minihls_mlir PRIVATE -fno-rtti)
   target_link_libraries(minihls_mlir PRIVATE minihls_warnings)
