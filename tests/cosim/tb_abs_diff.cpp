@@ -9,13 +9,19 @@
 #include "Vabs_diff.h"
 #include "cosim.hpp"
 
-static void bind(Vabs_diff& dut, const std::vector<long long>& in) {
+static void bindInputs(Vabs_diff& dut, const std::vector<long long>& in) {
   dut.a = static_cast<uint16_t>(in.at(0));
   dut.b = static_cast<uint16_t>(in.at(1));
 }
 
-static long long read(Vabs_diff& dut) { return static_cast<uint16_t>(dut.result); }
+static long long readResult(Vabs_diff& dut) { return static_cast<uint16_t>(dut.result); }
 
+// Named bindInputs/readResult, not bind/read: Verilator's headers pull in
+// <unistd.h> and <sys/socket.h>, so plain `read` and `bind` are already POSIX
+// functions at this point. The name then denotes an overload set rather than
+// one function, and template argument deduction fails with
+// "couldn't deduce template parameter" — which points at the call, not at the
+// collision.
 int main(int argc, char** argv) {
-  return minihls::cosim::run<Vabs_diff>(argc, argv, bind, read);
+  return minihls::cosim::run<Vabs_diff>(argc, argv, bindInputs, readResult);
 }
