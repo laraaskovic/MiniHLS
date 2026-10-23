@@ -22,7 +22,7 @@ add_executable(minihls main.cpp)
 target_link_libraries(minihls PRIVATE minihls_core minihls_warnings)
 
 if(MINIHLS_ENABLE_MLIR)
-  add_library(minihls_mlir dump.cpp mlirgen/mlirgen.cpp)
+  add_library(minihls_mlir dump.cpp mlirgen/mlirgen.cpp hwgen/hwgen.cpp)
   target_include_directories(minihls_mlir PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
   # SYSTEM: the project builds with -Wall -Wextra -Wpedantic, and the MLIR and
   # CIRCT headers do not. Without this every translation unit that includes
@@ -35,7 +35,8 @@ if(MINIHLS_ENABLE_MLIR)
     minihls_core                      # the emitter walks the front end's AST
     MLIRIR MLIRParser
     MLIRFuncDialect MLIRArithDialect MLIRSCFDialect MLIRMemRefDialect
-    CIRCTHW CIRCTComb CIRCTSeq)
+    CIRCTHW CIRCTComb CIRCTSeq CIRCTSV
+    CIRCTExportVerilog)
   target_compile_options(minihls_mlir PRIVATE -fno-rtti)
   target_link_libraries(minihls_mlir PRIVATE minihls_warnings)
 

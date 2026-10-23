@@ -145,6 +145,14 @@ private:
     for (size_t i = 0; i < fn.params.size(); ++i)
       values_[fn.params[i].symbol] = entry->getArgument(i);
 
+    // Keep the source's parameter names on the side. MLIR itself has no use
+    // for them — %arg0 is the name as far as the IR is concerned — but E8
+    // turns these into the module's port names, and Verilog whose ports read
+    // `a, b, c` instead of `in0, in1, in2` is worth one attribute.
+    for (size_t i = 0; i < fn.params.size(); ++i)
+      func.setArgAttr(static_cast<unsigned>(i), "minihls.name",
+                      builder_.getStringAttr(fn.params[i].name));
+
     emitBlock(*fn.body);
     if (!failed_ && !returned_)
       fail(fn.range, "function '" + fn.name + "' falls off its end without a "

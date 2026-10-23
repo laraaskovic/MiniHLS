@@ -4,8 +4,14 @@
 
 namespace minihls {
 
-using u128 = unsigned __int128;
-using i128 = __int128;
+// __extension__ silences -Wpedantic for exactly these two declarations.
+// __int128 is not ISO C++, which is true and which we have decided to
+// accept: the language computes to 128 bits, so the interpreter needs a
+// 128-bit integer, and there is no portable one. Narrowing the warning
+// here keeps -Wpedantic useful everywhere else instead of training us to
+// ignore it.
+__extension__ using u128 = unsigned __int128;
+__extension__ using i128 = __int128;
 
 // A value of one of the language's integer types: `width` meaningful bits,
 // interpreted per `isSigned`. Bits above `width` in `raw` are always zero.
