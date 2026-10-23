@@ -78,15 +78,45 @@ mkdir -p hw
 echo
 note "written to $OUT"
 
-if command -v verilator >/dev/null; then
-  bar "7. VERILATOR   --lint-only"
-  note "Elaborates the module: checks the ports and widths are self-consistent."
-  note "Linting is not correctness. Co-simulation against stage 3 is E8.S6."
-  if verilator --lint-only -Wno-fatal "$OUT"; then
-    printf '\n\033[1;32mOK — %s compiled from .hc to SystemVerilog and elaborates.\033[0m\n' "$(basename "$SRC")"
-  else
-    echo "verilator rejected the generated module" >&2; exit 1
-  fi
-else
-  note "verilator not on PATH, skipping the lint step"
+
+if ! command -v verilator >/dev/null; then
+  note "verilator not on PATH, skipping the lint and co-simulation steps"
+  exit 0
 fi
+
+bar "7. VERILATOR   --lint-only"
+note "Elaborates the module: checks the ports and widths are self-consistent."
+note "This proves the Verilog is LEGAL. It says nothing about the answers."
+verilator --lint-only -Wno-fatal "$OUT" || { echo "verilator rejected it" >&2; exit 1; }
+echo "lint clean"
+
+NAME="$(basename "${SRC%.hc}")"
+TB="tests/cosim/tb_${NAME}.cpp"
+if [[ ! -f "$TB" ]]; then
+  bar "8. CO-SIMULATION   (not wired for $NAME)"
+  note "$TB does not exist, so this example is not co-simulated yet."
+  exit 0
+fi
+
+bar "8. CO-SIMULATION   the same vectors, through the hardware"
+note "Stage 3 ran these vectors through the interpreter. Now they go through"
+note "the generated circuit. Every answer has to match bit for bit, including"
+note "the cases C leaves undefined and this language does not."
+
+WORK="$BUILD/demo-cosim-$NAME"
+mkdir -p "$WORK"
+# Absolute paths: verilator runs make inside -Mdir and passes these through
+# unchanged, so a path relative to the repo root resolves to nothing there.
+verilator --cc --exe --build -Wno-fatal \
+  -Mdir "$WORK/obj" \
+  -CFLAGS "-I$PWD/tests/cosim -std=c++20 -Wall" \
+  "$PWD/$OUT" "$PWD/$TB" > "$WORK/build.log" 2>&1 \
+  || { echo "testbench build failed, see $WORK/build.log" >&2; tail -20 "$WORK/build.log" >&2; exit 1; }
+
+if ! "$WORK/obj/V$NAME" "${SRC%.hc}.tests"; then
+  printf '\n\033[1;31mThe generated hardware does not match the reference.\033[0m\n' >&2
+  exit 1
+fi
+
+printf '\n\033[1;32mOK: %s went from .hc to SystemVerilog, and the hardware agrees with\n' "$(basename "$SRC")"
+printf '    the reference interpreter on every vector.\033[0m\n'

@@ -27,3 +27,4 @@ obj_dir/
 # ctest scratch, if ctest is ever run from the source tree
 Testing/
 hw/*.generated.sv
+obj_dir/

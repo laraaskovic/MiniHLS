@@ -85,3 +85,24 @@ if(MINIHLS_ENABLE_MLIR)
     message(STATUS "minihls: verilator not found, skipping the verilog.* tests")
   endif()
 endif()
+
+# Co-simulation: the same vectors through the reference interpreter and through
+# the generated hardware, which have to agree bit for bit. `minihls test`
+# already checks the interpreter against examples/<name>.tests, so comparing
+# the hardware against that file compares it against the interpreter.
+#
+# This is the check that distinguishes "the Verilog elaborates" from "the
+# Verilog is correct", and it covers the defined-behaviour cases that only
+# exist because LANGUAGE.md refused to leave them undefined.
+if(MINIHLS_ENABLE_MLIR AND VERILATOR_EXE)
+  foreach(example max3 abs_diff)
+    add_test(NAME cosim.${example} COMMAND ${CMAKE_COMMAND}
+             -DMINIHLS=$<TARGET_FILE:minihls>
+             -DVERILATOR=${VERILATOR_EXE}
+             -DCASE=${CMAKE_SOURCE_DIR}/examples/${example}.hc
+             -DTESTS=${CMAKE_SOURCE_DIR}/examples/${example}.tests
+             -DCOSIM_DIR=${CMAKE_CURRENT_SOURCE_DIR}/cosim
+             -DNAME=${example}
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/RunCosim.cmake)
+  endforeach()
+endif()
