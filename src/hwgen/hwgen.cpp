@@ -218,14 +218,25 @@ bool HWGen::lowerOp(mlir::Operation& op) {
   }
 
   // ---- the datapath, one row per operation ----
+  //
+  // The variadic comb ops take a `twoState` flag, and it has to be passed
+  // explicitly: both of their create() overloads default their fourth
+  // argument, so three arguments is ambiguous. false is four-state semantics —
+  // the operands may carry X and Z, as Verilog's own operators do. Setting it
+  // would be a promise that no X can ever reach this operator, which nothing
+  // in this compiler establishes, and it is a promise a simulator is entitled
+  // to act on.
+
   if (mlir::isa<mlir::arith::AddIOp>(op))
     return bin2([&](Value a, Value b) {
-      return circt::comb::AddOp::create(builder_, at, mlir::ValueRange{a, b}); });
+      return circt::comb::AddOp::create(builder_, at, mlir::ValueRange{a, b},
+                                        /*twoState=*/false); });
   if (mlir::isa<mlir::arith::SubIOp>(op))
     return bin2([&](Value a, Value b) { return circt::comb::SubOp::create(builder_, at, a, b); });
   if (mlir::isa<mlir::arith::MulIOp>(op))
     return bin2([&](Value a, Value b) {
-      return circt::comb::MulOp::create(builder_, at, mlir::ValueRange{a, b}); });
+      return circt::comb::MulOp::create(builder_, at, mlir::ValueRange{a, b},
+                                        /*twoState=*/false); });
   if (mlir::isa<mlir::arith::DivSIOp>(op))
     return bin2([&](Value a, Value b) { return circt::comb::DivSOp::create(builder_, at, a, b); });
   if (mlir::isa<mlir::arith::DivUIOp>(op))
@@ -236,13 +247,16 @@ bool HWGen::lowerOp(mlir::Operation& op) {
     return bin2([&](Value a, Value b) { return circt::comb::ModUOp::create(builder_, at, a, b); });
   if (mlir::isa<mlir::arith::AndIOp>(op))
     return bin2([&](Value a, Value b) {
-      return circt::comb::AndOp::create(builder_, at, mlir::ValueRange{a, b}); });
+      return circt::comb::AndOp::create(builder_, at, mlir::ValueRange{a, b},
+                                        /*twoState=*/false); });
   if (mlir::isa<mlir::arith::OrIOp>(op))
     return bin2([&](Value a, Value b) {
-      return circt::comb::OrOp::create(builder_, at, mlir::ValueRange{a, b}); });
+      return circt::comb::OrOp::create(builder_, at, mlir::ValueRange{a, b},
+                                        /*twoState=*/false); });
   if (mlir::isa<mlir::arith::XOrIOp>(op))
     return bin2([&](Value a, Value b) {
-      return circt::comb::XorOp::create(builder_, at, mlir::ValueRange{a, b}); });
+      return circt::comb::XorOp::create(builder_, at, mlir::ValueRange{a, b},
+                                        /*twoState=*/false); });
   if (mlir::isa<mlir::arith::ShLIOp>(op))
     return bin2([&](Value a, Value b) { return circt::comb::ShlOp::create(builder_, at, a, b); });
   if (mlir::isa<mlir::arith::ShRSIOp>(op))
